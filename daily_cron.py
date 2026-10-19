@@ -34,7 +34,7 @@ def main():
     run_master_market_scan(
         scan_commodities=True,
         scan_nifty_core=True,
-        scan_all_nse=False,
+        scan_all_nse=True,
         proximity_pct=0.05
     )
 
