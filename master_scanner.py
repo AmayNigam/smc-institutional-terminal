@@ -4,6 +4,44 @@ import time
 import pandas as pd
 import numpy as np
 
+# ==============================================================================
+# PRODUCTION GUARDRAILS: SCHEMAS, CIRCUITS & LIQUIDITY FILTERS
+# ==============================================================================
+
+ALERT_SCHEMA = [
+    'Ticker', 'Asset_Class', 'Direction', 'Live_Price',
+    'Entry', 'Stop_Loss', 'Target', 'R:R', 'OB_Date'
+]
+
+RADAR_SCHEMA = [
+    'Ticker', 'Asset_Class', 'Live_Price', 'Trend',
+    'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%'
+]
+
+def is_liquid_and_tradable(df, is_commodity=False):
+    """Filters out penny stocks, illiquid instruments, and circuit-locked candles."""
+    if df is None or len(df) < 20:
+        return False
+
+    latest = df.iloc[-1]
+
+    # 1. Circuit filter: High == Low indicates a locked upper/lower circuit
+    if latest['High'] == latest['Low']:
+        return False
+
+    # 2. Zero volume check
+    if latest['Volume'] <= 0:
+        return False
+
+    # 3. Liquidity filter for NSE equities (Minimum Average Daily Turnover of ₹50 Lakhs)
+    if not is_commodity:
+        recent_20 = df.tail(20)
+        daily_turnover = recent_20['Close'] * recent_20['Volume']
+        if daily_turnover.mean() < 5000000:  
+            return False
+
+    return True
+    
 if sys.platform.startswith('win'):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
@@ -20,6 +58,11 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
         data = load_positional_data(ticker, start_date="2022-01-01")
         if data['daily'].empty or len(data['daily']) < 200:
             return None, []
+        # --- NEW LIQUIDITY & CIRCUIT FILTER ---
+        is_comm = ("=" in ticker) or ticker.endswith("=F")
+        if not is_liquid_and_tradable(data['daily'], is_commodity=is_comm):
+            return None, []
+        # --------------------------------------
 
         engine = SMCEngine(data['daily'], swing_length=3)
         smc_df = engine.run_all()
@@ -163,24 +206,30 @@ def run_master_market_scan(
     print(f"\n{'='*75}")
     print(" [RADAR] MASTER ASSET RADAR BOARD (Current Location & Nearest Key Zones)")
     print(f"{'='*75}\n")
-    if not radar_df.empty:
+    if radar_df.empty:
+        # Prevent Streamlit crash by forcing headers even if empty
+        radar_df = pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Live_Price', 'Trend', 'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%'])
+    else:
         display_cols = ['Ticker', 'Asset_Class', 'Live_Price', 'Trend', 'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%']
         print(radar_df[display_cols].to_string(index=False))
-        radar_df.to_csv("SMC_MASTER_RADAR_FEED.csv", index=False)
+
+    radar_df.to_csv("SMC_MASTER_RADAR_FEED.csv", index=False)
 
     print(f"\n{'='*75}")
     print(f" [STRIKE] HIGH-PROBABILITY CONFIRMED ALERTS")
     print(f"{'='*75}\n")
-    if not alerts_df.empty:
+
+    if alerts_df.empty:
+        print("[!] No assets currently show a confirmed reversal inside a strike zone.")
+        # Prevent Streamlit EmptyDataError by forcing headers
+        alerts_df = pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Direction', 'Live_Price', 'Entry', 'Stop_Loss', 'Target', 'R:R', 'OB_Date'])
+    else:
         alerts_df = alerts_df.sort_values(by='R:R', ascending=False)
         print(alerts_df.to_string(index=False))
-    else:
-        print("[!] No assets currently show a confirmed reversal inside a strike zone.")
 
-    # Always save the file, even if it is empty, to wipe out yesterday's stale alerts
+    # Always save the file to wipe stale alerts, while maintaining valid schema columns
     alerts_df.to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
     print(f"\n[+] Saved confirmed setups to SMC_ACTIONABLE_ALERTS.csv")
-
     print(f"\n{'='*75}")
     print(" SCAN RUN COMPLETE. DATA IS CACHED & DASHBOARD-READY.")
     print(f"{'='*75}\n")
