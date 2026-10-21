@@ -174,10 +174,12 @@ def run_master_market_scan(
     if not alerts_df.empty:
         alerts_df = alerts_df.sort_values(by='R:R', ascending=False)
         print(alerts_df.to_string(index=False))
-        alerts_df.to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
-        print(f"\n[+] Saved confirmed setups to SMC_ACTIONABLE_ALERTS.csv")
     else:
         print("[!] No assets currently show a confirmed reversal inside a strike zone.")
+
+    # Always save the file, even if it is empty, to wipe out yesterday's stale alerts
+    alerts_df.to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
+    print(f"\n[+] Saved confirmed setups to SMC_ACTIONABLE_ALERTS.csv")
 
     print(f"\n{'='*75}")
     print(" SCAN RUN COMPLETE. DATA IS CACHED & DASHBOARD-READY.")
