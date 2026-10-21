@@ -236,9 +236,19 @@ with tabs[3]:
     st.subheader("🔬 Client Performance & Backtest Audit")
     st.caption("Run institutional walk-forward backtests with confirmation rules, dynamic ATR stops, and breakeven trailing.")
     
+    # Load all 2,200+ tickers dynamically from the scanned radar feed
+    try:
+        import pandas as pd
+        feed_df = pd.read_csv("SMC_MASTER_RADAR_FEED.csv")
+        full_ticker_list = sorted([str(t) for t in feed_df["Ticker"].dropna().unique() if str(t).strip()])
+    except Exception:
+        full_ticker_list = available_tickers
+
     b_col1, b_col2, b_col3 = st.columns([2, 1, 1])
     with b_col1:
-        bt_ticker = st.selectbox("Audit Ticker:", available_tickers, index=1)
+        custom_input = st.text_input("Enter Any Ticker:", placeholder="e.g. PCJEWELLER.NS")
+        selected_dropdown = st.selectbox("Or Pick From Scanned Universe:", full_ticker_list, index=0)
+        bt_ticker = custom_input.strip().upper() if custom_input.strip() else selected_dropdown
     with b_col2:
         bt_start = st.selectbox("Historical Start Date:", ["2020-01-01", "2021-01-01", "2022-01-01"], index=0)
     with b_col3:
