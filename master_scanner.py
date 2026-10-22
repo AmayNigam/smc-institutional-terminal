@@ -54,19 +54,19 @@ from smc_engine import SMCEngine
 from smc_state_machine import SMCMitigationTracker
 from universe import get_tickers_by_category
 
-def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.05):
+def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, proximity_pct: float = 0.05):
     try:
-        data = load_positional_data(ticker, start_date="2022-01-01")
-        if data['daily'].empty or len(data['daily']) < 200:
+        # Evaluate the pre-loaded dataframe instead of fetching it
+        if ticker_df is None or ticker_df.empty or len(ticker_df) < 200:
             return None, []
-            
+
         # --- NEW LIQUIDITY & CIRCUIT FILTER ---
         is_comm = ("=" in ticker) or ticker.endswith("=F")
-        if not is_liquid_and_tradable(data['daily'], is_commodity=is_comm):
+        if not is_liquid_and_tradable(ticker_df, is_commodity=is_comm):
             return None, []
         # --------------------------------------
 
-        engine = SMCEngine(data['daily'], swing_length=3)
+        engine = SMCEngine(ticker_df, swing_length=3)
         smc_df = engine.run_all()
 
         tracker = SMCMitigationTracker(smc_df)
