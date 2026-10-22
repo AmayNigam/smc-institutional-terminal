@@ -3,6 +3,26 @@ import sys
 import time
 import pandas as pd
 import numpy as np
+import requests
+
+# ==========================================
+# TELEGRAM BOT CREDENTIALS
+# ==========================================
+TELEGRAM_TOKEN = "8722537362:AAFRTCHnbZ77TtlJBTTJzBdUImBKHcdZvHY"
+TELEGRAM_CHAT_ID = "758957826"
+
+def send_telegram_alert(message):
+    """Sends a formatted markdown message to your Telegram app."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"[!] Telegram Alert Failed: {e}")
 
 # ==============================================================================
 # PRODUCTION GUARDRAILS: SCHEMAS, CIRCUITS & LIQUIDITY FILTERS
