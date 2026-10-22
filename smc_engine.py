@@ -27,32 +27,25 @@ class SMCEngine:
         self.df['Is_Displacement'] = self.df['Body_Size'] >= (0.5 * self.df['ATR'])
 
     def detect_swings(self):
-        self.df['Swing_High'] = np.nan
-        self.df['Swing_Low'] = np.nan
-        self.df['Confirmed_Swing_High'] = np.nan
-        self.df['Confirmed_Swing_Low'] = np.nan
+        window_size = (2 * self.swing_length) + 1
         
-        window = self.swing_length
-        for i in range(2 * window, self.length):
-            target_idx = i - window
-            target_high = self.df['High'].iloc[target_idx]
-            target_low = self.df['Low'].iloc[target_idx]
-            
-            window_highs = self.df['High'].iloc[target_idx - window : target_idx + window + 1]
-            window_lows = self.df['Low'].iloc[target_idx - window : target_idx + window + 1]
-            
-            if target_high == window_highs.max():
-                self.df.iat[target_idx, self.df.columns.get_loc('Swing_High')] = target_high
-                self.df.iat[i, self.df.columns.get_loc('Confirmed_Swing_High')] = target_high
-                
-            if target_low == window_lows.min():
-                self.df.iat[target_idx, self.df.columns.get_loc('Swing_Low')] = target_low
-                self.df.iat[i, self.df.columns.get_loc('Confirmed_Swing_Low')] = target_low
-                
+        # 1. Vectorized rolling max/min (center=True aligns the window around the target)
+        rolling_max = self.df['High'].rolling(window=window_size, center=True).max()
+        rolling_min = self.df['Low'].rolling(window=window_size, center=True).min()
+        
+        # 2. Identify swings without looping
+        self.df['Swing_High'] = np.where(self.df['High'] == rolling_max, self.df['High'], np.nan)
+        self.df['Swing_Low'] = np.where(self.df['Low'] == rolling_min, self.df['Low'], np.nan)
+        
+        # 3. Shift forward by swing_length to simulate real-time "confirmation" delay
+        self.df['Confirmed_Swing_High'] = self.df['Swing_High'].shift(self.swing_length)
+        self.df['Confirmed_Swing_Low'] = self.df['Swing_Low'].shift(self.swing_length)
+        
+        # 4. Forward fill to maintain the last known swing
         self.df['Last_Swing_High'] = self.df['Confirmed_Swing_High'].ffill()
         self.df['Last_Swing_Low'] = self.df['Confirmed_Swing_Low'].ffill()
         
-        # Premium & Discount Dealing Range Matrix
+        # 5. Premium & Discount Dealing Range Matrix
         self.df['Dealing_Range_Mid'] = (self.df['Last_Swing_High'] + self.df['Last_Swing_Low']) / 2.0
         self.df['In_Discount'] = self.df['Low'] < self.df['Dealing_Range_Mid']
         self.df['In_Premium'] = self.df['High'] > self.df['Dealing_Range_Mid']
