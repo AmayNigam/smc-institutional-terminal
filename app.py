@@ -196,41 +196,95 @@ with tabs[1]:
 # ------------------------------------------------------------------------------
 # TAB 3: INTERACTIVE CHART INSPECTOR
 # ------------------------------------------------------------------------------
-with tabs[2]:
-    st.subheader("📊 Interactive Institutional Chart Inspector")
-    st.caption("TradingView-grade Plotly visualization showing live Order Blocks (+OB/-OB), Dealing Range, and BOS breaks.")
-    
-    # Fetch all commodities, Nifty 50, and the broad NSE universe, then sort alphabetically
-    available_tickers = sorted(list(set(
-        ASSET_UNIVERSES.get("COMMODITIES_GLOBAL", []) +
-        ASSET_UNIVERSES.get("NIFTY_50_CORE", []) +
-        ASSET_UNIVERSES.get("NSE_ALL", [])
-        )))
-    
-    c1, c2, c3 = st.columns([2, 1, 1])
-    with c1:
-        selected_ticker = st.selectbox("Select Asset to Inspect:", available_tickers, index=0)
-    with c2:
-        bars_count = st.slider("Lookback Bars:", min_value=60, max_value=350, value=180, step=20)
-    with c3:
-        chart_theme = st.selectbox("Theme:", ["light", "dark"], index=0)
+# ---------------------------------------------------------
+    # TAB 3: INTERACTIVE CHART INSPECTOR
+    # ---------------------------------------------------------
+    with tabs[2]:
+        st.subheader("📊 Interactive Institutional Chart Inspector")
+        st.caption("TradingView-grade Plotly visualization showing live Order Blocks (+OB/-OB), Dealing Range, and BOS breaks.")
 
-    if selected_ticker:
-        with st.spinner(f"Computing SMC structure and rendering chart for {selected_ticker}..."):
-            data = load_positional_data(selected_ticker, start_date="2022-01-01")
-            if not data['daily'].empty and len(data['daily']) >= 50:
-                engine = SMCEngine(data['daily'], swing_length=3)
-                smc_df = engine.run_all()
+        # Safely fetch and combine all tickers, removing duplicates, sorting alphabetically
+        available_tickers = sorted(list(set(
+            ASSET_UNIVERSES.get("COMMODITIES_GLOBAL", []) +
+            ASSET_UNIVERSES.get("NIFTY_50_CORE", []) +
+            ASSET_UNIVERSES.get("NSE_ALL", [])
+        )))
+
+        # Fallback if universes are empty during initialization
+        if not available_tickers:
+            available_tickers = ["RELIANCE.NS"]
+
+        c1, c2, c3 = st.columns([2, 1, 1])
+        with c1:
+            # Dropdown is natively searchable - just click and type
+            default_idx = available_tickers.index("RELIANCE.NS") if "RELIANCE.NS" in available_tickers else 0
+            selected_ticker = st.selectbox("Search & Select Asset:", available_tickers, index=default_idx)
+        with c2:
+            bars_count = st.slider("Lookback Bars:", min_value=60, max_value=350, value=180, step=20)
+        with c3:
+            chart_theme = st.selectbox("Theme:", ["light", "dark"], index=0)
+
+        if selected_ticker:
+            with st.spinner(f"Computing SMC structure and rendering chart for {selected_ticker}..."):
                 
-                tracker = SMCMitigationTracker(smc_df)
-                tracker.run_tracking()
+                data = load_positional_data(selected_ticker, start_date="2022-01-01")
                 
-                chart_engine = SMCChartEngine(smc_df, tracker, selected_ticker)
-                fig = chart_engine.render_chart(num_bars=bars_count, save_html=False, theme=chart_theme)
-                
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.error(f"Insufficient data to generate chart for {selected_ticker}.")
+                if data is not None and 'daily' in data and not data['daily'].empty and len(data['daily']) >= 50:
+                    engine = SMCEngine(data['daily'], swing_length=3)
+                    smc_df = engine.run_all()
+
+                    tracker = SMCMitigationTracker(smc_df)
+                    tracker.run_tracking()
+                    
+                    # ==========================================
+                    # NEW: HUD METRICS (Market Context)
+                    # ==========================================
+                    current_price = smc_df['Close'].iloc[-1]
+                    
+                    bull_obs = [ob for ob in tracker.active_bullish_obs if ob.top <= current_price]
+                    bear_obs = [ob for ob in tracker.active_bearish_obs if ob.bottom >= current_price]
+                    
+                    nearest_demand = max(bull_obs, key=lambda x: x.top) if bull_obs else None
+                    nearest_supply = min(bear_obs, key=lambda x: x.bottom) if bear_obs else None
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    m1, m2, m3, m4 = st.columns(4)
+                    
+                    m1.metric("Live Price", f"₹{current_price:,.2f}")
+                    
+                    if nearest_demand:
+                        dist_d = ((current_price - nearest_demand.top) / current_price) * 100
+                        m2.metric("Nearest Demand (OB)", f"₹{nearest_demand.top:,.2f}", f"-{dist_d:.1f}% away", delta_color="off")
+                    else:
+                        m2.metric("Nearest Demand (OB)", "None Found")
+                        
+                    if nearest_supply:
+                        dist_s = ((nearest_supply.bottom - current_price) / current_price) * 100
+                        m3.metric("Nearest Supply (OB)", f"₹{nearest_supply.bottom:,.2f}", f"+{dist_s:.1f}% away", delta_color="off")
+                    else:
+                        m3.metric("Nearest Supply (OB)", "None Found")
+                        
+                    macro_high = smc_df['Confirmed_Swing_High'].max()
+                    macro_low = smc_df['Confirmed_Swing_Low'].min()
+                    
+                    if not pd.isna(macro_high) and not pd.isna(macro_low):
+                        eq_level = (macro_high + macro_low) / 2
+                        matrix_status = "PREMIUM (Sell Zone)" if current_price > eq_level else "DISCOUNT (Buy Zone)"
+                    else:
+                        matrix_status = "CALCULATING..."
+                        
+                    m4.metric("Macro Matrix", matrix_status)
+                    st.markdown("---")
+                    
+                    # ==========================================
+                    # RENDER CHART
+                    # ==========================================
+                    chart_engine = SMCChartEngine(smc_df, tracker, selected_ticker)
+                    fig = chart_engine.render_chart(num_bars=bars_count, save_html=False, theme=chart_theme)
+
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.error(f"Insufficient data to generate chart for {selected_ticker}.")
 
 # ------------------------------------------------------------------------------
 # TAB 4: STRATEGY BACKTEST AUDIT
