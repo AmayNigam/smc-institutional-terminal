@@ -128,38 +128,40 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
                         
                         # (Keep your existing Risk/Reward calculation here...)
 
-        # SHORT ALERTS (Requires Price in OB + Bearish Daily Candle + Premium Matrix)
+        # ==========================================
+        # SHORT ALERTS (Bearish Strike Zone)
+        # ==========================================
         if is_downtrend:
             for ob in tracker.active_bearish_obs:
                 if ob.pd_matrix != 'PREMIUM':
                     continue
-                # Price is inside the OB AND Candle is Bearish today
-                # ==========================================
-        # SHORT ALERTS (Bearish Strike Zone)
-        # ==========================================
-        if nearest_supply_ob and is_downtrend and nearest_supply_ob.pd_matrix == 'PREMIUM':
-            ob = nearest_supply_ob
-            
-            # 1. Zone Touch & Reversal Confirmation (Red Candle)
-            if c_high >= ob.bottom and current_price < c_open:
-                
-                # 2. DEEP PREMIUM FILTER (Top 35% of the macro range)
-                dealing_range = ob.top - ob.swing_target
-                deep_premium_level = ob.top - (dealing_range * 0.35)
-                if current_price < deep_premium_level:
-                    pass 
-                else:
+                    
+                # 1. Zone Touch & Reversal Confirmation (Red Candle)
+                if c_high >= ob.bottom and current_price < c_open:
+                    
+                    # 2. DEEP PREMIUM FILTER (Top 35% of Range)
+                    dealing_range = ob.top - ob.swing_target
+                    deep_premium_level = ob.top - (dealing_range * 0.35)
+                    if current_price < deep_premium_level:
+                        continue  # Discard: Pullback is not high enough for institutional entry
+                    
                     # 3. VOLUME ASYMMETRY (Healthy Retest Exhaustion)
                     avg_volume = data['daily']['Volume'].tail(20).mean()
-                    if current_row['Volume'] <= (1.2 * avg_volume):
-                        
-                        entry = current_price
-                        stop = ob.top + (0.5 * ob.atr_at_creation)
-                        target = ob.swing_target
-                        
-                        # (Keep your existing Risk/Reward calculation here...)
+                    if current_row['Volume'] > (1.2 * avg_volume):
+                        continue  # Discard: Too much buy-side volume on the pullback
+                    
+                    # 4. TRADE GEOMETRY & RISK MATH
+                    entry = current_price
+                    stop = ob.top + (0.5 * ob.atr_at_creation)
+                    target = ob.swing_target
+                    risk = stop - entry
+                    
+                    if pd.isna(target) or target >= entry:
+                        target = entry - (1.5 * risk)
                         
                     rr = (entry - target) / risk if risk > 0 else 0
+                    
+                    # 5. EXECUTION & LOGGING
                     if rr >= 1.0:
                         actionable_setups.append({
                             'Ticker': ticker, 'Asset_Class': asset_class, 'Direction': 'SHORT_CONFIRMED',
@@ -168,7 +170,6 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
                             'R:R': round(rr, 2), 'OB_Date': str(ob.created_at.date())
                         })
                         break
-
         return radar_record, actionable_setups
 
     except Exception as e:
