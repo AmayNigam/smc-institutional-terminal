@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
+from universe import get_tickers_by_category
 
 # Ensure current working directory is in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -199,10 +200,12 @@ with tabs[2]:
     st.subheader("📊 Interactive Institutional Chart Inspector")
     st.caption("TradingView-grade Plotly visualization showing live Order Blocks (+OB/-OB), Dealing Range, and BOS breaks.")
     
-    available_tickers = (
-        ASSET_UNIVERSES.get("COMMODITIES_GLOBAL", []) +
-        ASSET_UNIVERSES.get("NIFTY_50_CORE", [])
-    )
+    # Fetch all commodities, Nifty 50, and the broad NSE universe, then sort alphabetically
+        available_tickers = sorted(list(set(
+            ASSET_UNIVERSES.get("COMMODITIES_GLOBAL", []) +
+            ASSET_UNIVERSES.get("NIFTY_50_CORE", []) +
+            ASSET_UNIVERSES.get("NSE_ALL", [])
+        )))
     
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
