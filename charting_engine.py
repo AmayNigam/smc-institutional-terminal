@@ -7,11 +7,12 @@ class SMCChartEngine:
     """
     Ultra-Clean TradingView-Grade Visual Engine.
     Faithfully replicates the LuxAlgo SMC visual hierarchy:
-    - Minimalist candle presentation with subtle gridlines.
-    - Soft, semi-transparent Order Blocks (+OB / -OB).
+    - Minimalist candle presentation with NO gridlines.
+    - Soft, semi-transparent Order Blocks (+OB / -OB) with solid borders.
+    - Borderless Fair Value Gaps (FVG).
     - Clean BOS / CHoCH structural break lines.
     - Premium, Equilibrium, and Discount dealing range bands.
-    - Zero chart clutter (no bulky text tags or giant arrows).
+    - Zero chart clutter.
     """
     def __init__(self, df: pd.DataFrame, tracker: SMCMitigationTracker, ticker: str):
         self.df = df
@@ -24,9 +25,7 @@ class SMCChartEngine:
         # Color palettes matching TradingView LuxAlgo
         if theme == 'light':
             bg_color = '#ffffff'
-            grid_color = '#f0f3fa'
             text_color = '#131722'
-            border_color = '#e0e3eb'
             up_color = '#089981'     # TradingView Mint Green
             down_color = '#F23645'   # TradingView Coral Red
             bull_ob_fill = 'rgba(8, 153, 129, 0.12)'
@@ -36,11 +35,11 @@ class SMCChartEngine:
             prem_fill = 'rgba(242, 54, 69, 0.06)'
             disc_fill = 'rgba(8, 153, 129, 0.06)'
             eq_line_color = '#878b94'
+            fvg_bull_fill = 'rgba(41, 98, 255, 0.15)' # TradingView FVG Blue
+            fvg_bear_fill = 'rgba(255, 152, 0, 0.15)' # TradingView FVG Orange
         else:
             bg_color = '#131722'
-            grid_color = '#1e222d'
             text_color = '#d1d4dc'
-            border_color = '#2a2e39'
             up_color = '#089981'
             down_color = '#F23645'
             bull_ob_fill = 'rgba(8, 153, 129, 0.18)'
@@ -50,6 +49,8 @@ class SMCChartEngine:
             prem_fill = 'rgba(242, 54, 69, 0.08)'
             disc_fill = 'rgba(8, 153, 129, 0.08)'
             eq_line_color = '#787b86'
+            fvg_bull_fill = 'rgba(41, 98, 255, 0.20)'
+            fvg_bear_fill = 'rgba(255, 152, 0, 0.20)'
 
         fig = go.Figure()
 
@@ -82,7 +83,6 @@ class SMCChartEngine:
         lowest_p = plot_df['Low'].min()
         eq_p = (highest_p + lowest_p) / 2.0
         
-        # Premium Shaded Zone (Upper 50%)
         shapes.append(dict(
             type="rect",
             x0=start_date, y0=eq_p, x1=last_date, y1=highest_p,
@@ -93,7 +93,6 @@ class SMCChartEngine:
             xanchor="left", yanchor="top", font=dict(color=down_color, size=10)
         ))
 
-        # Equilibrium Line (50%)
         shapes.append(dict(
             type="line",
             x0=start_date, y0=eq_p, x1=last_date, y1=eq_p,
@@ -104,7 +103,6 @@ class SMCChartEngine:
             xanchor="left", yanchor="middle", font=dict(color=eq_line_color, size=10)
         ))
 
-        # Discount Shaded Zone (Lower 50%)
         shapes.append(dict(
             type="rect",
             x0=start_date, y0=lowest_p, x1=last_date, y1=eq_p,
@@ -118,18 +116,16 @@ class SMCChartEngine:
         # -------------------------------------------------------------
         # 3. RECENT UNMITIGATED ORDER BLOCKS (Max 3 Bullish, 3 Bearish)
         # -------------------------------------------------------------
-        # Filter for the most relevant recent unmitigated zones
         recent_bull_obs = [ob for ob in self.tracker.active_bullish_obs if ob.top >= lowest_p * 0.90][-3:]
         recent_bear_obs = [ob for ob in self.tracker.active_bearish_obs if ob.bottom <= highest_p * 1.10][-3:]
 
-        # Bullish Order Blocks (+OB)
         for ob in recent_bull_obs:
             ob_start = ob.created_at if ob.created_at >= start_date else start_date
             shapes.append(dict(
                 type="rect",
                 x0=ob_start, y0=ob.bottom, x1=last_date, y1=ob.top,
                 fillcolor=bull_ob_fill,
-                line=dict(color=bull_ob_line, width=1),
+                line=dict(color=bull_ob_line, width=2), # Upgraded width for bold border
                 layer="below"
             ))
             annotations.append(dict(
@@ -137,14 +133,13 @@ class SMCChartEngine:
                 xanchor="left", yanchor="middle", font=dict(color=up_color, size=9)
             ))
 
-        # Bearish Order Blocks (-OB)
         for ob in recent_bear_obs:
             ob_start = ob.created_at if ob.created_at >= start_date else start_date
             shapes.append(dict(
                 type="rect",
                 x0=ob_start, y0=ob.bottom, x1=last_date, y1=ob.top,
                 fillcolor=bear_ob_fill,
-                line=dict(color=bear_ob_line, width=1),
+                line=dict(color=bear_ob_line, width=2), # Upgraded width for bold border
                 layer="below"
             ))
             annotations.append(dict(
@@ -153,42 +148,63 @@ class SMCChartEngine:
             ))
 
         # -------------------------------------------------------------
-        # 4. SUBTLE STRUCTURAL BREAKS (BOS & CHoCH)
+        # 4. FAIR VALUE GAPS (FVGs)
         # -------------------------------------------------------------
-        # Identify confirmed swing breaks in the visible window
-        for i in range(1, len(plot_df)):
-            curr_c = plot_df['Close'].iloc[i]
-            prev_c = plot_df['Close'].iloc[i-1]
-            last_sh = plot_df['Last_Swing_High'].iloc[i]
-            last_sl = plot_df['Last_Swing_Low'].iloc[i]
-            bar_date = plot_df.index[i]
-
-            # Bullish Breakout (BOS)
-            if prev_c <= last_sh < curr_c:
-                annotations.append(dict(
-                    x=bar_date, y=last_sh, text="BOS", showarrow=False,
-                    yanchor="bottom", font=dict(color=up_color, size=8, family="monospace")
-                ))
+        if 'Bullish_FVG' in plot_df.columns:
+            bull_fvgs = plot_df[plot_df['Bullish_FVG'] == True].tail(3) # Get last 3 imbalances
+            for idx, row in bull_fvgs.iterrows():
                 shapes.append(dict(
-                    type="line",
-                    x0=plot_df.index[max(0, i-6)], y0=last_sh, x1=bar_date, y1=last_sh,
-                    line=dict(color=up_color, width=1, dash="dash"), layer="below"
+                    type="rect",
+                    x0=idx, y0=row.get('Bullish_FVG_Bottom', row['Low']), 
+                    x1=last_date, y1=row.get('Bullish_FVG_Top', row['High']),
+                    fillcolor=fvg_bull_fill, line_width=0, layer="below" # Borderless
                 ))
 
-            # Bearish Breakout (BOS)
-            if prev_c >= last_sl > curr_c:
-                annotations.append(dict(
-                    x=bar_date, y=last_sl, text="BOS", showarrow=False,
-                    yanchor="top", font=dict(color=down_color, size=8, family="monospace")
-                ))
+        if 'Bearish_FVG' in plot_df.columns:
+            bear_fvgs = plot_df[plot_df['Bearish_FVG'] == True].tail(3) # Get last 3 imbalances
+            for idx, row in bear_fvgs.iterrows():
                 shapes.append(dict(
-                    type="line",
-                    x0=plot_df.index[max(0, i-6)], y0=last_sl, x1=bar_date, y1=last_sl,
-                    line=dict(color=down_color, width=1, dash="dash"), layer="below"
+                    type="rect",
+                    x0=idx, y0=row.get('Bearish_FVG_Bottom', row['Low']), 
+                    x1=last_date, y1=row.get('Bearish_FVG_Top', row['High']),
+                    fillcolor=fvg_bear_fill, line_width=0, layer="below" # Borderless
                 ))
 
         # -------------------------------------------------------------
-        # 5. CURRENT LIVE PRICE LINE
+        # 5. SUBTLE STRUCTURAL BREAKS (BOS & CHoCH)
+        # -------------------------------------------------------------
+        if 'Last_Swing_High' in plot_df.columns and 'Last_Swing_Low' in plot_df.columns:
+            for i in range(1, len(plot_df)):
+                curr_c = plot_df['Close'].iloc[i]
+                prev_c = plot_df['Close'].iloc[i-1]
+                last_sh = plot_df['Last_Swing_High'].iloc[i]
+                last_sl = plot_df['Last_Swing_Low'].iloc[i]
+                bar_date = plot_df.index[i]
+
+                if pd.notna(last_sh) and prev_c <= last_sh < curr_c:
+                    annotations.append(dict(
+                        x=bar_date, y=last_sh, text="BOS", showarrow=False,
+                        yanchor="bottom", font=dict(color=up_color, size=8, family="monospace")
+                    ))
+                    shapes.append(dict(
+                        type="line",
+                        x0=plot_df.index[max(0, i-6)], y0=last_sh, x1=bar_date, y1=last_sh,
+                        line=dict(color=up_color, width=1, dash="dash"), layer="below"
+                    ))
+
+                if pd.notna(last_sl) and prev_c >= last_sl > curr_c:
+                    annotations.append(dict(
+                        x=bar_date, y=last_sl, text="BOS", showarrow=False,
+                        yanchor="top", font=dict(color=down_color, size=8, family="monospace")
+                    ))
+                    shapes.append(dict(
+                        type="line",
+                        x0=plot_df.index[max(0, i-6)], y0=last_sl, x1=bar_date, y1=last_sl,
+                        line=dict(color=down_color, width=1, dash="dash"), layer="below"
+                    ))
+
+        # -------------------------------------------------------------
+        # 6. CURRENT LIVE PRICE LINE
         # -------------------------------------------------------------
         current_price = plot_df['Close'].iloc[-1]
         shapes.append(dict(
@@ -198,7 +214,7 @@ class SMCChartEngine:
         ))
 
         # -------------------------------------------------------------
-        # 6. TRADINGVIEW AESTHETIC LAYOUT CONFIGURATION
+        # 7. TRADINGVIEW AESTHETIC LAYOUT CONFIGURATION (UPGRADED)
         # -------------------------------------------------------------
         fig.update_layout(
             title=dict(
@@ -210,15 +226,17 @@ class SMCChartEngine:
             paper_bgcolor=bg_color,
             font=dict(color=text_color, family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"),
             xaxis=dict(
-                showgrid=True, gridcolor=grid_color, gridwidth=1,
-                linecolor=border_color, tickfont=dict(color='#787b86', size=11),
-                rangeslider_visible=False,
-                type='date'
+                showgrid=False,       # NO GRIDLINES
+                zeroline=False,
+                rangeslider=dict(visible=False), # HIDE BULKY SLIDER
+                type='category',      # REMOVE WEEKEND GAPS
+                tickfont=dict(color='#787b86', size=11)
             ),
             yaxis=dict(
-                side='right',
-                showgrid=True, gridcolor=grid_color, gridwidth=1,
-                linecolor=border_color, tickfont=dict(color='#787b86', size=11),
+                side='right',         # TRADINGVIEW STANDARD RIGHT SIDE
+                showgrid=False,       # NO GRIDLINES
+                zeroline=False,
+                tickfont=dict(color='#787b86', size=11),
                 tickformat=',.2f',
                 range=[lowest_p * 0.98, highest_p * 1.02]
             ),
@@ -233,7 +251,6 @@ class SMCChartEngine:
         if save_html:
             clean_ticker = self.ticker.replace('=', '_').replace('.', '_')
             filename = f"SMC_Chart_{clean_ticker}.html"
-            # Include Plotly from official embedded CDN or offline bundle so it opens instantly anywhere
             fig.write_html(
                 filename, 
                 include_plotlyjs='cdn', 
