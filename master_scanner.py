@@ -103,29 +103,30 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
 
         actionable_setups = []
 
-        # LONG ALERTS (Requires Price in OB + Bullish Daily Candle + Discount Matrix)
-        if is_uptrend:
-            for ob in tracker.active_bullish_obs:
-                if ob.pd_matrix != 'DISCOUNT':
-                    continue
-                # Price is inside the OB AND Candle is Bullish today
-                if c_low <= ob.top and current_price > c_open:
-                    entry = current_price
-                    stop = ob.bottom - (0.5 * ob.atr_at_creation)
-                    target = ob.swing_target
-                    risk = entry - stop
-                    if pd.isna(target) or target <= entry:
-                        target = entry + (1.5 * risk)
+        # ==========================================
+        # LONG ALERTS (Bullish Strike Zone)
+        # ==========================================
+        if nearest_demand_ob and is_uptrend and nearest_demand_ob.pd_matrix == 'DISCOUNT':
+            ob = nearest_demand_ob
+            
+            # 1. Zone Touch & Reversal Confirmation (Green Candle)
+            if c_low <= ob.top and current_price > c_open:
+                
+                # 2. DEEP DISCOUNT FILTER (Bottom 35% of the macro range)
+                dealing_range = ob.swing_target - ob.bottom
+                deep_discount_level = ob.bottom + (dealing_range * 0.35)
+                if current_price > deep_discount_level:
+                    pass # Or continue/return depending on your loop structure
+                else:
+                    # 3. VOLUME ASYMMETRY (Healthy Retest Absorption)
+                    avg_volume = data['daily']['Volume'].tail(20).mean()
+                    if current_row['Volume'] <= (1.2 * avg_volume):
                         
-                    rr = (target - entry) / risk if risk > 0 else 0
-                    if rr >= 1.0:
-                        actionable_setups.append({
-                            'Ticker': ticker, 'Asset_Class': asset_class, 'Direction': 'LONG_CONFIRMED',
-                            'Live_Price': round(current_price, 2), 'Entry': round(entry, 2),
-                            'Stop_Loss': round(stop, 2), 'Target': round(target, 2),
-                            'R:R': round(rr, 2), 'OB_Date': str(ob.created_at.date())
-                        })
-                        break # Only take the best/first valid one
+                        entry = current_price
+                        stop = ob.bottom - (0.5 * ob.atr_at_creation)
+                        target = ob.swing_target
+                        
+                        # (Keep your existing Risk/Reward calculation here...)
 
         # SHORT ALERTS (Requires Price in OB + Bearish Daily Candle + Premium Matrix)
         if is_downtrend:
@@ -133,13 +134,30 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
                 if ob.pd_matrix != 'PREMIUM':
                     continue
                 # Price is inside the OB AND Candle is Bearish today
-                if c_high >= ob.bottom and current_price < c_open:
-                    entry = current_price
-                    stop = ob.top + (0.5 * ob.atr_at_creation)
-                    target = ob.swing_target
-                    risk = stop - entry
-                    if pd.isna(target) or target >= entry:
-                        target = entry - (1.5 * risk)
+                # ==========================================
+        # SHORT ALERTS (Bearish Strike Zone)
+        # ==========================================
+        if nearest_supply_ob and is_downtrend and nearest_supply_ob.pd_matrix == 'PREMIUM':
+            ob = nearest_supply_ob
+            
+            # 1. Zone Touch & Reversal Confirmation (Red Candle)
+            if c_high >= ob.bottom and current_price < c_open:
+                
+                # 2. DEEP PREMIUM FILTER (Top 35% of the macro range)
+                dealing_range = ob.top - ob.swing_target
+                deep_premium_level = ob.top - (dealing_range * 0.35)
+                if current_price < deep_premium_level:
+                    pass 
+                else:
+                    # 3. VOLUME ASYMMETRY (Healthy Retest Exhaustion)
+                    avg_volume = data['daily']['Volume'].tail(20).mean()
+                    if current_row['Volume'] <= (1.2 * avg_volume):
+                        
+                        entry = current_price
+                        stop = ob.top + (0.5 * ob.atr_at_creation)
+                        target = ob.swing_target
+                        
+                        # (Keep your existing Risk/Reward calculation here...)
                         
                     rr = (entry - target) / risk if risk > 0 else 0
                     if rr >= 1.0:
