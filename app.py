@@ -203,11 +203,12 @@ with tabs[1]:
         st.subheader("📊 Interactive Institutional Chart Inspector")
         st.caption("TradingView-grade Plotly visualization showing live Order Blocks (+OB/-OB), Dealing Range, and BOS breaks.")
 
-        # Safely fetch and combine all tickers, removing duplicates, sorting alphabetically
+    
+        # Safely fetch using your built-in function to guarantee all lists load
         available_tickers = sorted(list(set(
-            ASSET_UNIVERSES.get("COMMODITIES_GLOBAL", []) +
-            ASSET_UNIVERSES.get("NIFTY_50_CORE", []) +
-            ASSET_UNIVERSES.get("NSE_ALL", [])
+            get_tickers_by_category("COMMODITIES_GLOBAL") +
+            get_tickers_by_category("NIFTY_50_CORE") +
+            get_tickers_by_category("NSE_ALL")
         )))
 
         # Fallback if universes are empty during initialization
