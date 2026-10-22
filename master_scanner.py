@@ -261,7 +261,7 @@ def run_master_market_scan(
 
         # Pass the pre-loaded dataframe directly into the scanner
         radar_rec, alerts = scan_single_ticker(ticker, asset_class, ticker_df, proximity_pct=proximity_pct)
-        radar_rec, alerts = scan_single_ticker(ticker, asset_class, proximity_pct=proximity_pct)
+        
         if radar_rec:
             all_radar_records.append(radar_rec)
         if alerts:
