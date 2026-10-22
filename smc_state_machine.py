@@ -18,8 +18,8 @@ class SMCZone:
         self.mitigation_type = None
 
 class SMCMitigationTracker:
-    def __init__(self, df: pd.DataFrame):
-        self.df = df.copy()
+    def __init__(self, df: pd.DataFrame, inplace: bool = True):
+        self.df = df if inplace else df.copy()
         self.active_bullish_obs = []
         self.active_bearish_obs = []
         self.mitigated_zones = []
@@ -50,7 +50,10 @@ class SMCMitigationTracker:
         return None, None, None
 
     def run_tracking(self) -> pd.DataFrame:
-        records = []
+        # Pre-allocate columns directly in the existing memory block
+        self.df['Active_Bull_OB_Count'] = 0
+        self.df['Active_Bear_OB_Count'] = 0
+        
         for i in range(len(self.df)):
             current_date = self.df.index[i]
             row = self.df.iloc[i]
@@ -102,12 +105,8 @@ class SMCMitigationTracker:
                         ob = SMCZone('ORDER_BLOCK', 'BEARISH', ob_date, ob_top, ob_bottom, ob_eq, c_atr, pd_state, swing_target)
                         self.active_bearish_obs.append(ob)
             
-            records.append({
-                'Date': current_date,
-                'Active_Bull_OB_Count': len(self.active_bullish_obs),
-                'Active_Bear_OB_Count': len(self.active_bearish_obs)
-            })
+           # Assign directly using fast integer indexing
+            self.df.iat[i, self.df.columns.get_loc('Active_Bull_OB_Count')] = len(self.active_bullish_obs)
+            self.df.iat[i, self.df.columns.get_loc('Active_Bear_OB_Count')] = len(self.active_bearish_obs)
             
-        tracking_df = pd.DataFrame(records).set_index('Date')
-        self.df = self.df.join(tracking_df)
         return self.df
