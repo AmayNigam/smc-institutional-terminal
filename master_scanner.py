@@ -240,8 +240,27 @@ def run_master_market_scan(
     all_radar_records = []
     all_actionable_alerts = []
 
+    import yfinance as yf
+    from data_loader import clean_ohlcv_data
+
+    # 1. Pre-fetch all data in one multithreaded network call BEFORE the loop
+    tickers = [t[0] for t in scan_queue]
+    print(f"[*] Pre-fetching batch market data for {len(tickers)} assets...")
+    batch_raw = yf.download(tickers, start="2022-01-01", interval="1d", group_by="ticker", threads=True)
+
+    # 2. Iterate through the in-memory batch instead of making network calls
     for idx, (ticker, asset_class) in enumerate(scan_queue):
         print(f"[{idx+1}/{len(scan_queue)}] Analyzing {ticker} ({asset_class})...")
+        
+        # Extract and clean data for the specific ticker safely
+        try:
+            raw_df = batch_raw[ticker].dropna(how='all') if len(tickers) > 1 else batch_raw.dropna(how='all')
+            ticker_df = clean_ohlcv_data(raw_df)
+        except Exception:
+            ticker_df = None
+
+        # Pass the pre-loaded dataframe directly into the scanner
+        radar_rec, alerts = scan_single_ticker(ticker, asset_class, ticker_df, proximity_pct=proximity_pct)
         radar_rec, alerts = scan_single_ticker(ticker, asset_class, proximity_pct=proximity_pct)
         if radar_rec:
             all_radar_records.append(radar_rec)
