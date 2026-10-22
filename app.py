@@ -201,10 +201,10 @@ with tabs[2]:
     st.caption("TradingView-grade Plotly visualization showing live Order Blocks (+OB/-OB), Dealing Range, and BOS breaks.")
     
     # Fetch all commodities, Nifty 50, and the broad NSE universe, then sort alphabetically
-        available_tickers = sorted(list(set(
-            ASSET_UNIVERSES.get("COMMODITIES_GLOBAL", []) +
-            ASSET_UNIVERSES.get("NIFTY_50_CORE", []) +
-            ASSET_UNIVERSES.get("NSE_ALL", [])
+    available_tickers = sorted(list(set(
+        ASSET_UNIVERSES.get("COMMODITIES_GLOBAL", []) +
+        ASSET_UNIVERSES.get("NIFTY_50_CORE", []) +
+        ASSET_UNIVERSES.get("NSE_ALL", [])
         )))
     
     c1, c2, c3 = st.columns([2, 1, 1])
