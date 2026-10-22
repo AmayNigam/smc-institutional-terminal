@@ -32,9 +32,21 @@ class SMCMitigationTracker:
             is_up_candle = row['Close'] > row['Open']
             
             if direction == 'BULLISH' and is_down_candle:
+                # --- NEW: LIQUIDITY SWEEP CHECK ---
+                # Check the 5 candles prior to this candidate to ensure it swept a local low
+                local_lows = self.df['Low'].iloc[max(0, i - 5):i]
+                if not local_lows.empty and row['Low'] > local_lows.min():
+                    continue  # Discard: Did not sweep liquidity, keep looking
                 return (self.df.index[i], row['High'], row['Low'])
+                
             elif direction == 'BEARISH' and is_up_candle:
+                # --- NEW: LIQUIDITY SWEEP CHECK ---
+                # Check the 5 candles prior to this candidate to ensure it swept a local high
+                local_highs = self.df['High'].iloc[max(0, i - 5):i]
+                if not local_highs.empty and row['High'] < local_highs.max():
+                    continue  # Discard: Did not sweep liquidity, keep looking
                 return (self.df.index[i], row['High'], row['Low'])
+                
         return None, None, None
 
     def run_tracking(self) -> pd.DataFrame:
