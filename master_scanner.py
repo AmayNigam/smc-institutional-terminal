@@ -294,6 +294,22 @@ def run_master_market_scan(
     else:
         alerts_df = alerts_df.sort_values(by='R:R', ascending=False)
         print(alerts_df.to_string(index=False))
+        
+        # --- NEW: SEND TELEGRAM NOTIFICATIONS ---
+        print("\n[+] Dispatching Telegram Alerts...")
+        for _, row in alerts_df.iterrows():
+            direction_emoji = "🟢 LONG" if "LONG" in row['Direction'] else "🔴 SHORT"
+            
+            msg = f"🚨 *SMC STRIKE ALERT* 🚨\n\n"
+            msg += f"*{row['Ticker']}* ({row['Asset_Class']})\n"
+            msg += f"Direction: {direction_emoji}\n"
+            msg += f"Entry: ₹{row['Entry']}\n"
+            msg += f"Target: ₹{row['Target']}\n"
+            msg += f"Stop Loss: ₹{row['Stop_Loss']}\n"
+            msg += f"R:R: {row['R:R']}x\n"
+            
+            send_telegram_alert(msg)
+            time.sleep(0.5) # Anti-spam delay
 
     alerts_df.to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
     print(f"\n[+] Saved confirmed setups to SMC_ACTIONABLE_ALERTS.csv")
