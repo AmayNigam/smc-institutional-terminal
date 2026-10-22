@@ -3,7 +3,6 @@ import sys
 import time
 import pandas as pd
 import numpy as np
-import requests
 
 # ==============================================================================
 # PRODUCTION GUARDRAILS: SCHEMAS, CIRCUITS & LIQUIDITY FILTERS
@@ -77,7 +76,7 @@ def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, p
         c_open = current_row['Open']
         c_high = current_row['High']
         c_low = current_row['Low']
-        c_ema200 = current_row['EMA_200']
+        c_ema200 = current_row.get('EMA_200', np.nan)
         current_date = smc_df.index[-1].strftime('%Y-%m-%d')
         
         is_uptrend = current_price > c_ema200 if not pd.isna(c_ema200) else True
@@ -107,44 +106,57 @@ def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, p
         actionable_setups = []
 
         # ==========================================
-        # LONG ALERTS (Bullish Strike Zone)
+        # INSTITUTIONAL LIQUIDITY SWEEP LOGIC
         # ==========================================
+        # Instead of 1 bar, we look at the last 3 days to see if the market swept the zone
+        trigger_window = ticker_df.tail(3) 
+
+        # 1. LONG ALERTS (Bullish Strike Zone)
         if is_uptrend:
             for ob in tracker.active_bullish_obs:
-                if ob.pd_matrix != 'DISCOUNT':
-                    continue
-
-                # 1. Zone Touch & Reversal Confirmation (Green Candle)
-                if c_low <= ob.top and current_price > c_open:
-
-                    # 2. DEEP DISCOUNT FILTER (Bottom 35% of Range)
-                    dealing_range = ob.swing_target - ob.bottom
-                    deep_discount_level = ob.bottom + (dealing_range * 0.35)
-                    if current_price > deep_discount_level:
-                        continue  # Pullback not deep enough for institutional discount
-
-                    # 3. VOLUME ASYMMETRY (Healthy Retest Absorption)
-                    avg_volume = data['daily']['Volume'].tail(20).mean()
-                    if avg_volume > 0 and current_row['Volume'] > (1.2 * avg_volume):
-                        continue  # Excess sell volume during pullback
-
-                    # 4. TRADE GEOMETRY & RISK MATH
+                
+                # --- NEW: FVG CONFLUENCE RULE ---
+                # A high-probability OB must create an FVG within the next 4 candles
+                try:
+                    ob_idx = smc_df.index.get_loc(ob.created_at)
+                    has_fvg = smc_df['Bullish_FVG'].iloc[ob_idx : min(ob_idx + 5, len(smc_df))].any()
+                except KeyError:
+                    has_fvg = True 
+                    
+                if not has_fvg:
+                    continue # Skip this setup: the Order Block lacks FVG displacement
+                    
+                # Retest: Did price dip into the OB during the last 3 days?
+                ob_retested = trigger_window['Low'].min() <= ob.top
+                
+                # Liquidity Sweep: Did price wick BELOW the OB bottom, but current close is safely ABOVE it?
+                liquidity_swept = (trigger_window['Low'].min() < ob.bottom) and (current_price >= ob.bottom)
+                
+                # Reversal: Did current candle close green (buyers stepped in)?
+                bullish_rejection = current_price > c_open
+                
+                if ob_retested and liquidity_swept and bullish_rejection:
+                    
+                    # Target and SL Math
                     entry = current_price
-                    stop = ob.bottom - (0.5 * ob.atr_at_creation)
-                    target = ob.swing_target
-                    risk = entry - stop
-
+                    stop = trigger_window['Low'].min() * 0.998 # SL slightly below the sweep wick
+                    
+                    target = getattr(ob, 'swing_target', np.nan)
+                    # Fallback target if swing target is missing
                     if pd.isna(target) or target <= entry:
-                        target = entry + (1.5 * risk)
-
+                        target = smc_df['Last_Swing_High'].iloc[-1] if 'Last_Swing_High' in smc_df.columns else np.nan
+                        if pd.isna(target) or target <= entry:
+                             target = entry + (1.5 * (entry - stop))
+                        
+                    risk = entry - stop
                     rr = (target - entry) / risk if risk > 0 else 0
-
-                    # 5. EXECUTION & LOGGING
+                    
+                    # EXECUTION & LOGGING
                     if rr >= 1.0:
                         actionable_setups.append({
                             'Ticker': ticker,
                             'Asset_Class': asset_class,
-                            'Direction': 'LONG_CONFIRMED',
+                            'Direction': '🟢 LONG (OB+FVG Sweep)',
                             'Live_Price': round(current_price, 2),
                             'Entry': round(entry, 2),
                             'Stop_Loss': round(stop, 2),
@@ -152,47 +164,50 @@ def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, p
                             'R:R': round(rr, 2),
                             'OB_Date': str(ob.created_at.date() if hasattr(ob.created_at, 'date') else ob.created_at)
                         })
-                        break
+                        break 
 
-        # ==========================================
-        # SHORT ALERTS (Bearish Strike Zone)
-        # ==========================================
+        # 2. SHORT ALERTS (Bearish Strike Zone)
         if is_downtrend:
             for ob in tracker.active_bearish_obs:
-                if ob.pd_matrix != 'PREMIUM':
-                    continue
-
-                # 1. Zone Touch & Reversal Confirmation (Red Candle)
-                if c_high >= ob.bottom and current_price < c_open:
-
-                    # 2. DEEP PREMIUM FILTER (Top 35% of Range)
-                    dealing_range = ob.top - ob.swing_target
-                    deep_premium_level = ob.top - (dealing_range * 0.35)
-                    if current_price < deep_premium_level:
-                        continue  # Pullback not high enough for institutional premium
-
-                    # 3. VOLUME ASYMMETRY (Healthy Retest Exhaustion)
-                    avg_volume = data['daily']['Volume'].tail(20).mean()
-                    if avg_volume > 0 and current_row['Volume'] > (1.2 * avg_volume):
-                        continue  # Excess buy volume during pullback
-
-                    # 4. TRADE GEOMETRY & RISK MATH
+                
+                # --- NEW: FVG CONFLUENCE RULE ---
+                try:
+                    ob_idx = smc_df.index.get_loc(ob.created_at)
+                    has_fvg = smc_df['Bearish_FVG'].iloc[ob_idx : min(ob_idx + 5, len(smc_df))].any()
+                except KeyError:
+                    has_fvg = True 
+                    
+                if not has_fvg:
+                    continue # Skip this setup: the Order Block lacks FVG displacement
+                    
+                # Retest: Did price spike into the OB during the last 3 days?
+                ob_retested = trigger_window['High'].max() >= ob.bottom
+                
+                # Liquidity Sweep: Did price wick ABOVE the OB top, but current close is safely BELOW it?
+                liquidity_swept = (trigger_window['High'].max() > ob.top) and (current_price <= ob.top)
+                
+                # Reversal: Did current candle close red (sellers stepped in)?
+                bearish_rejection = current_price < c_open
+                
+                if ob_retested and liquidity_swept and bearish_rejection:
+                    
                     entry = current_price
-                    stop = ob.top + (0.5 * ob.atr_at_creation)
-                    target = ob.swing_target
-                    risk = stop - entry
-
+                    stop = trigger_window['High'].max() * 1.002 # SL slightly above the sweep wick
+                    
+                    target = getattr(ob, 'swing_target', np.nan)
                     if pd.isna(target) or target >= entry:
-                        target = entry - (1.5 * risk)
-
+                        target = smc_df['Last_Swing_Low'].iloc[-1] if 'Last_Swing_Low' in smc_df.columns else np.nan
+                        if pd.isna(target) or target >= entry:
+                             target = entry - (1.5 * (stop - entry))
+                             
+                    risk = stop - entry
                     rr = (entry - target) / risk if risk > 0 else 0
-
-                    # 5. EXECUTION & LOGGING
+                    
                     if rr >= 1.0:
                         actionable_setups.append({
                             'Ticker': ticker,
                             'Asset_Class': asset_class,
-                            'Direction': 'SHORT_CONFIRMED',
+                            'Direction': '🔴 SHORT (OB+FVG Sweep)',
                             'Live_Price': round(current_price, 2),
                             'Entry': round(entry, 2),
                             'Stop_Loss': round(stop, 2),
@@ -234,7 +249,7 @@ def run_master_market_scan(
 
     print(f"\n{'='*75}")
     print(f" LAUNCHING CLIENT-READY SMC SCAN: {len(scan_queue)} Total Assets In Queue")
-    print(f" Filters: Reversal Confirmation | Swing Targets | PD Matrix | Trend")
+    print(f" Filters: Reversal Confirmation | Swing Targets | FVG Confluence")
     print(f"{'='*75}\n")
 
     all_radar_records = []
@@ -250,8 +265,6 @@ def run_master_market_scan(
 
     # 2. Iterate through the in-memory batch instead of making network calls
     for idx, (ticker, asset_class) in enumerate(scan_queue):
-        print(f"[{idx+1}/{len(scan_queue)}] Analyzing {ticker} ({asset_class})...")
-        
         # Extract and clean data for the specific ticker safely
         try:
             raw_df = batch_raw[ticker].dropna(how='all') if len(tickers) > 1 else batch_raw.dropna(how='all')
@@ -266,9 +279,6 @@ def run_master_market_scan(
             all_radar_records.append(radar_rec)
         if alerts:
             all_actionable_alerts.extend(alerts)
-
-        if len(scan_queue) > 50:
-            time.sleep(0.25)
 
     radar_df = pd.DataFrame(all_radar_records)
     alerts_df = pd.DataFrame(all_actionable_alerts)
