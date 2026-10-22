@@ -229,7 +229,10 @@ class SMCChartEngine:
                 showgrid=False,       # NO GRIDLINES
                 zeroline=False,
                 rangeslider=dict(visible=False), # HIDE BULKY SLIDER
-                type='category',      # REMOVE WEEKEND GAPS
+                rangebreaks=[dict(bounds=["sat", "mon"])], # NATIVELY REMOVES WEEKENDS
+                tickformat="%Y-%m-%d", # CLEAN DATE FORMAT
+                nticks=10,            # PREVENTS CROWDING/OVERLAPPING
+                tickangle=0,          # KEEPS TEXT HORIZONTAL
                 tickfont=dict(color='#787b86', size=11)
             ),
             yaxis=dict(
