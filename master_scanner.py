@@ -41,7 +41,7 @@ def is_liquid_and_tradable(df, is_commodity=False):
             return False
 
     return True
-    
+
 if sys.platform.startswith('win'):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
@@ -58,6 +58,7 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
         data = load_positional_data(ticker, start_date="2022-01-01")
         if data['daily'].empty or len(data['daily']) < 200:
             return None, []
+            
         # --- NEW LIQUIDITY & CIRCUIT FILTER ---
         is_comm = ("=" in ticker) or ticker.endswith("=F")
         if not is_liquid_and_tradable(data['daily'], is_commodity=is_comm):
@@ -78,11 +79,12 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
         c_ema200 = current_row['EMA_200']
         current_date = smc_df.index[-1].strftime('%Y-%m-%d')
         
-        is_uptrend = current_price > c_ema200 if not np.isnan(c_ema200) else True
-        is_downtrend = current_price < c_ema200 if not np.isnan(c_ema200) else True
+        is_uptrend = current_price > c_ema200 if not pd.isna(c_ema200) else True
+        is_downtrend = current_price < c_ema200 if not pd.isna(c_ema200) else True
 
         bull_obs_below = [ob for ob in tracker.active_bullish_obs if ob.top <= current_price]
         nearest_demand_ob = max(bull_obs_below, key=lambda x: x.top) if bull_obs_below else None
+        
         bear_obs_above = [ob for ob in tracker.active_bearish_obs if ob.bottom >= current_price]
         nearest_supply_ob = min(bear_obs_above, key=lambda x: x.bottom) if bear_obs_above else None
 
@@ -106,27 +108,50 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
         # ==========================================
         # LONG ALERTS (Bullish Strike Zone)
         # ==========================================
-        if nearest_demand_ob and is_uptrend and nearest_demand_ob.pd_matrix == 'DISCOUNT':
-            ob = nearest_demand_ob
-            
-            # 1. Zone Touch & Reversal Confirmation (Green Candle)
-            if c_low <= ob.top and current_price > c_open:
-                
-                # 2. DEEP DISCOUNT FILTER (Bottom 35% of the macro range)
-                dealing_range = ob.swing_target - ob.bottom
-                deep_discount_level = ob.bottom + (dealing_range * 0.35)
-                if current_price > deep_discount_level:
-                    pass # Or continue/return depending on your loop structure
-                else:
+        if is_uptrend:
+            for ob in tracker.active_bullish_obs:
+                if ob.pd_matrix != 'DISCOUNT':
+                    continue
+
+                # 1. Zone Touch & Reversal Confirmation (Green Candle)
+                if c_low <= ob.top and current_price > c_open:
+
+                    # 2. DEEP DISCOUNT FILTER (Bottom 35% of Range)
+                    dealing_range = ob.swing_target - ob.bottom
+                    deep_discount_level = ob.bottom + (dealing_range * 0.35)
+                    if current_price > deep_discount_level:
+                        continue  # Pullback not deep enough for institutional discount
+
                     # 3. VOLUME ASYMMETRY (Healthy Retest Absorption)
                     avg_volume = data['daily']['Volume'].tail(20).mean()
-                    if current_row['Volume'] <= (1.2 * avg_volume):
-                        
-                        entry = current_price
-                        stop = ob.bottom - (0.5 * ob.atr_at_creation)
-                        target = ob.swing_target
-                        
-                        # (Keep your existing Risk/Reward calculation here...)
+                    if avg_volume > 0 and current_row['Volume'] > (1.2 * avg_volume):
+                        continue  # Excess sell volume during pullback
+
+                    # 4. TRADE GEOMETRY & RISK MATH
+                    entry = current_price
+                    stop = ob.bottom - (0.5 * ob.atr_at_creation)
+                    target = ob.swing_target
+                    risk = entry - stop
+
+                    if pd.isna(target) or target <= entry:
+                        target = entry + (1.5 * risk)
+
+                    rr = (target - entry) / risk if risk > 0 else 0
+
+                    # 5. EXECUTION & LOGGING
+                    if rr >= 1.0:
+                        actionable_setups.append({
+                            'Ticker': ticker,
+                            'Asset_Class': asset_class,
+                            'Direction': 'LONG_CONFIRMED',
+                            'Live_Price': round(current_price, 2),
+                            'Entry': round(entry, 2),
+                            'Stop_Loss': round(stop, 2),
+                            'Target': round(target, 2),
+                            'R:R': round(rr, 2),
+                            'OB_Date': str(ob.created_at.date() if hasattr(ob.created_at, 'date') else ob.created_at)
+                        })
+                        break
 
         # ==========================================
         # SHORT ALERTS (Bearish Strike Zone)
@@ -135,41 +160,47 @@ def scan_single_ticker(ticker: str, asset_class: str, proximity_pct: float = 0.0
             for ob in tracker.active_bearish_obs:
                 if ob.pd_matrix != 'PREMIUM':
                     continue
-                    
+
                 # 1. Zone Touch & Reversal Confirmation (Red Candle)
                 if c_high >= ob.bottom and current_price < c_open:
-                    
+
                     # 2. DEEP PREMIUM FILTER (Top 35% of Range)
                     dealing_range = ob.top - ob.swing_target
                     deep_premium_level = ob.top - (dealing_range * 0.35)
                     if current_price < deep_premium_level:
-                        continue  # Discard: Pullback is not high enough for institutional entry
-                    
+                        continue  # Pullback not high enough for institutional premium
+
                     # 3. VOLUME ASYMMETRY (Healthy Retest Exhaustion)
                     avg_volume = data['daily']['Volume'].tail(20).mean()
-                    if current_row['Volume'] > (1.2 * avg_volume):
-                        continue  # Discard: Too much buy-side volume on the pullback
-                    
+                    if avg_volume > 0 and current_row['Volume'] > (1.2 * avg_volume):
+                        continue  # Excess buy volume during pullback
+
                     # 4. TRADE GEOMETRY & RISK MATH
                     entry = current_price
                     stop = ob.top + (0.5 * ob.atr_at_creation)
                     target = ob.swing_target
                     risk = stop - entry
-                    
+
                     if pd.isna(target) or target >= entry:
                         target = entry - (1.5 * risk)
-                        
+
                     rr = (entry - target) / risk if risk > 0 else 0
-                    
+
                     # 5. EXECUTION & LOGGING
                     if rr >= 1.0:
                         actionable_setups.append({
-                            'Ticker': ticker, 'Asset_Class': asset_class, 'Direction': 'SHORT_CONFIRMED',
-                            'Live_Price': round(current_price, 2), 'Entry': round(entry, 2),
-                            'Stop_Loss': round(stop, 2), 'Target': round(target, 2),
-                            'R:R': round(rr, 2), 'OB_Date': str(ob.created_at.date())
+                            'Ticker': ticker,
+                            'Asset_Class': asset_class,
+                            'Direction': 'SHORT_CONFIRMED',
+                            'Live_Price': round(current_price, 2),
+                            'Entry': round(entry, 2),
+                            'Stop_Loss': round(stop, 2),
+                            'Target': round(target, 2),
+                            'R:R': round(rr, 2),
+                            'OB_Date': str(ob.created_at.date() if hasattr(ob.created_at, 'date') else ob.created_at)
                         })
                         break
+
         return radar_record, actionable_setups
 
     except Exception as e:
@@ -226,8 +257,7 @@ def run_master_market_scan(
     print(" [RADAR] MASTER ASSET RADAR BOARD (Current Location & Nearest Key Zones)")
     print(f"{'='*75}\n")
     if radar_df.empty:
-        # Prevent Streamlit crash by forcing headers even if empty
-        radar_df = pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Live_Price', 'Trend', 'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%'])
+        radar_df = pd.DataFrame(columns=RADAR_SCHEMA)
     else:
         display_cols = ['Ticker', 'Asset_Class', 'Live_Price', 'Trend', 'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%']
         print(radar_df[display_cols].to_string(index=False))
@@ -240,13 +270,11 @@ def run_master_market_scan(
 
     if alerts_df.empty:
         print("[!] No assets currently show a confirmed reversal inside a strike zone.")
-        # Prevent Streamlit EmptyDataError by forcing headers
-        alerts_df = pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Direction', 'Live_Price', 'Entry', 'Stop_Loss', 'Target', 'R:R', 'OB_Date'])
+        alerts_df = pd.DataFrame(columns=ALERT_SCHEMA)
     else:
         alerts_df = alerts_df.sort_values(by='R:R', ascending=False)
         print(alerts_df.to_string(index=False))
 
-    # Always save the file to wipe stale alerts, while maintaining valid schema columns
     alerts_df.to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
     print(f"\n[+] Saved confirmed setups to SMC_ACTIONABLE_ALERTS.csv")
     print(f"\n{'='*75}")
