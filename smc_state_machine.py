@@ -110,3 +110,86 @@ class SMCMitigationTracker:
             self.df.iat[i, self.df.columns.get_loc('Active_Bear_OB_Count')] = len(self.active_bearish_obs)
             
         return self.df
+        class ICTSweepAndShiftEngine:
+    """
+    Event-driven State Machine. Tracks the exact chronological sequence:
+    Searching -> Swept Liquidity -> MSS Confirmed (with FVG) -> In Trade.
+    """
+    def __init__(self, df: pd.DataFrame):
+        self.df = df.copy()
+
+    def run_state_machine(self) -> dict:
+        state = "SEARCHING"
+        setup_data = {}
+        
+        for i in range(2, len(self.df)):
+            current = self.df.iloc[i]
+            prev = self.df.iloc[i-1]
+            
+            # --- 1. SEARCHING FOR A LIQUIDITY SWEEP ---
+            if state == "SEARCHING":
+                # Sell-side liquidity sweep (Bullish Setup)
+                if current['Low'] < current.get('Last_Swing_Low', -1):
+                    state = "SWEPT_BULLISH"
+                    setup_data = {
+                        'direction': 'LONG',
+                        'sweep_low': current['Low'],
+                        'mss_trigger': current.get('Last_Swing_High', 999999),
+                        'target': current.get('Last_Swing_High', np.nan)
+                    }
+                # Buy-side liquidity sweep (Bearish Setup)
+                elif current['High'] > current.get('Last_Swing_High', 999999):
+                    state = "SWEPT_BEARISH"
+                    setup_data = {
+                        'direction': 'SHORT',
+                        'sweep_high': current['High'],
+                        'mss_trigger': current.get('Last_Swing_Low', -1),
+                        'target': current.get('Last_Swing_Low', np.nan)
+                    }
+
+            # --- 2. WAITING FOR MARKET STRUCTURE SHIFT & FVG ---
+            elif state == "SWEPT_BULLISH":
+                # Invalidation: Drops lower than initial sweep
+                if current['Low'] < setup_data['sweep_low']:
+                    setup_data['sweep_low'] = current['Low'] 
+                
+                # MSS Triggered: Closed above prior swing high
+                elif current['Close'] > setup_data['mss_trigger']:
+                    if current.get('Bullish_FVG', False) or prev.get('Bullish_FVG', False):
+                        state = "MSS_CONFIRMED"
+                        setup_data['entry_price'] = current['Bullish_FVG_Top'] if current.get('Bullish_FVG') else prev['Bullish_FVG_Top']
+                        setup_data['stop_loss'] = setup_data['sweep_low'] * 0.998
+                        setup_data['date'] = self.df.index[i].strftime('%Y-%m-%d')
+                    else:
+                        state = "SEARCHING"
+
+            elif state == "SWEPT_BEARISH":
+                if current['High'] > setup_data['sweep_high']:
+                    setup_data['sweep_high'] = current['High']
+                
+                elif current['Close'] < setup_data['mss_trigger']:
+                    if current.get('Bearish_FVG', False) or prev.get('Bearish_FVG', False):
+                        state = "MSS_CONFIRMED"
+                        setup_data['entry_price'] = current['Bearish_FVG_Bottom'] if current.get('Bearish_FVG') else prev['Bearish_FVG_Bottom']
+                        setup_data['stop_loss'] = setup_data['sweep_high'] * 1.002
+                        setup_data['date'] = self.df.index[i].strftime('%Y-%m-%d')
+                    else:
+                        state = "SEARCHING"
+
+            # --- 3. WAITING FOR ENTRY (RETRACEMENT) ---
+            elif state == "MSS_CONFIRMED":
+                # Invalidation: Stop loss hit before entry
+                if setup_data['direction'] == 'LONG' and current['Low'] < setup_data['stop_loss']:
+                    state = "SEARCHING"
+                elif setup_data['direction'] == 'SHORT' and current['High'] > setup_data['stop_loss']:
+                    state = "SEARCHING"
+                
+                # Triggered Entry
+                elif setup_data['direction'] == 'LONG' and current['Low'] <= setup_data['entry_price']:
+                    state = "IN_TRADE"
+                elif setup_data['direction'] == 'SHORT' and current['High'] >= setup_data['entry_price']:
+                    state = "IN_TRADE"
+
+        # Return the final state of the asset on the current day
+        setup_data['current_state'] = state
+        return setup_data
