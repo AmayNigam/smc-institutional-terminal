@@ -53,176 +53,65 @@ from smc_engine import SMCEngine
 from smc_state_machine import SMCMitigationTracker
 from universe import get_tickers_by_category
 
+from smc_state_machine import SMCMitigationTracker, ICTSweepAndShiftEngine
+
 def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, proximity_pct: float = 0.05):
     try:
-        # Evaluate the pre-loaded dataframe instead of fetching it
-        if ticker_df is None or ticker_df.empty or len(ticker_df) < 200:
-            return None, []
-
-        # --- NEW LIQUIDITY & CIRCUIT FILTER ---
-        is_comm = ("=" in ticker) or ticker.endswith("=F")
-        if not is_liquid_and_tradable(ticker_df, is_commodity=is_comm):
-            return None, []
-        # --------------------------------------
+        if ticker_df is None or len(ticker_df) < 100: return None, []
+        if not is_liquid_and_tradable(ticker_df, is_commodity=("=" in ticker)): return None, []
 
         engine = SMCEngine(ticker_df, swing_length=3)
         smc_df = engine.run_all()
+        current_price = smc_df['Close'].iloc[-1]
 
-        tracker = SMCMitigationTracker(smc_df)
-        tracker.run_tracking()
+        # 1. Run the new ICT State Machine
+        ict_engine = ICTSweepAndShiftEngine(smc_df)
+        final_state = ict_engine.run_state_machine()
 
-        current_row = smc_df.iloc[-1]
-        current_price = current_row['Close']
-        c_open = current_row['Open']
-        c_high = current_row['High']
-        c_low = current_row['Low']
-        c_ema200 = current_row.get('EMA_200', np.nan)
-        current_date = smc_df.index[-1].strftime('%Y-%m-%d')
-        
-        is_uptrend = current_price > c_ema200 if not pd.isna(c_ema200) else True
-        is_downtrend = current_price < c_ema200 if not pd.isna(c_ema200) else True
-
-        bull_obs_below = [ob for ob in tracker.active_bullish_obs if ob.top <= current_price]
-        nearest_demand_ob = max(bull_obs_below, key=lambda x: x.top) if bull_obs_below else None
-        
-        bear_obs_above = [ob for ob in tracker.active_bearish_obs if ob.bottom >= current_price]
-        nearest_supply_ob = min(bear_obs_above, key=lambda x: x.bottom) if bear_obs_above else None
-
-        dist_demand_pct = round(((current_price - nearest_demand_ob.top) / current_price) * 100, 2) if nearest_demand_ob else None
-        dist_supply_pct = round(((nearest_supply_ob.bottom - current_price) / current_price) * 100, 2) if nearest_supply_ob else None
-
+        # 2. Basic Radar Record (Status of asset)
         radar_record = {
             'Ticker': ticker,
             'Asset_Class': asset_class,
             'Live_Price': round(current_price, 2),
-            'Date': current_date,
-            'Nearest_Demand_OB': round(nearest_demand_ob.top, 2) if nearest_demand_ob else None,
-            'Demand_Dist_%': dist_demand_pct,
-            'Nearest_Supply_OB': round(nearest_supply_ob.bottom, 2) if nearest_supply_ob else None,
-            'Supply_Dist_%': dist_supply_pct,
-            'Trend': 'BULLISH' if is_uptrend else 'BEARISH'
+            'Trend': final_state.get('current_state', 'SEARCHING'),
+            'Nearest_Demand_OB': final_state.get('sweep_low', None),
+            'Demand_Dist_%': None,
+            'Nearest_Supply_OB': final_state.get('sweep_high', None),
+            'Supply_Dist_%': None
         }
 
         actionable_setups = []
 
-        # ==========================================
-        # INSTITUTIONAL LIQUIDITY SWEEP LOGIC
-        # ==========================================
-        # Instead of 1 bar, we look at the last 3 days to see if the market swept the zone
-        trigger_window = ticker_df.tail(3) 
+        # 3. Output strictly validated actionable alerts
+        if final_state['current_state'] == "MSS_CONFIRMED":
+            entry = final_state['entry_price']
+            stop = final_state['stop_loss']
+            target = final_state['target']
+            
+            # Failsafe RR calculation
+            risk = abs(entry - stop)
+            reward = abs(target - entry)
+            rr = reward / risk if risk > 0 else 0
 
-        # 1. LONG ALERTS (Bullish Strike Zone)
-        if is_uptrend:
-            for ob in tracker.active_bullish_obs:
+            # Only output if price hasn't run away from the entry yet
+            if (final_state['direction'] == 'LONG' and current_price <= entry * 1.02) or \
+               (final_state['direction'] == 'SHORT' and current_price >= entry * 0.98):
                 
-                # --- NEW: FVG CONFLUENCE RULE ---
-                # A high-probability OB must create an FVG within the next 4 candles
-                try:
-                    ob_idx = smc_df.index.get_loc(ob.created_at)
-                    has_fvg = smc_df['Bullish_FVG'].iloc[ob_idx : min(ob_idx + 5, len(smc_df))].any()
-                except KeyError:
-                    has_fvg = True 
-                    
-                if not has_fvg:
-                    continue # Skip this setup: the Order Block lacks FVG displacement
-                    
-                # Retest: Did price dip into the OB during the last 3 days?
-                ob_retested = trigger_window['Low'].min() <= ob.top
-                
-                # Liquidity Sweep: Did price wick BELOW the OB bottom, but current close is safely ABOVE it?
-                liquidity_swept = (trigger_window['Low'].min() < ob.bottom) and (current_price >= ob.bottom)
-                
-                # Reversal: Did current candle close green (buyers stepped in)?
-                bullish_rejection = current_price > c_open
-                
-                if ob_retested and liquidity_swept and bullish_rejection:
-                    
-                    # Target and SL Math
-                    entry = current_price
-                    stop = trigger_window['Low'].min() * 0.998 # SL slightly below the sweep wick
-                    
-                    target = getattr(ob, 'swing_target', np.nan)
-                    # Fallback target if swing target is missing
-                    if pd.isna(target) or target <= entry:
-                        target = smc_df['Last_Swing_High'].iloc[-1] if 'Last_Swing_High' in smc_df.columns else np.nan
-                        if pd.isna(target) or target <= entry:
-                             target = entry + (1.5 * (entry - stop))
-                        
-                    risk = entry - stop
-                    rr = (target - entry) / risk if risk > 0 else 0
-                    
-                    # EXECUTION & LOGGING
-                    if rr >= 1.0:
-                        actionable_setups.append({
-                            'Ticker': ticker,
-                            'Asset_Class': asset_class,
-                            'Direction': '🟢 LONG (OB+FVG Sweep)',
-                            'Live_Price': round(current_price, 2),
-                            'Entry': round(entry, 2),
-                            'Stop_Loss': round(stop, 2),
-                            'Target': round(target, 2),
-                            'R:R': round(rr, 2),
-                            'OB_Date': str(ob.created_at.date() if hasattr(ob.created_at, 'date') else ob.created_at)
-                        })
-                        break 
-
-        # 2. SHORT ALERTS (Bearish Strike Zone)
-        if is_downtrend:
-            for ob in tracker.active_bearish_obs:
-                
-                # --- NEW: FVG CONFLUENCE RULE ---
-                try:
-                    ob_idx = smc_df.index.get_loc(ob.created_at)
-                    has_fvg = smc_df['Bearish_FVG'].iloc[ob_idx : min(ob_idx + 5, len(smc_df))].any()
-                except KeyError:
-                    has_fvg = True 
-                    
-                if not has_fvg:
-                    continue # Skip this setup: the Order Block lacks FVG displacement
-                    
-                # Retest: Did price spike into the OB during the last 3 days?
-                ob_retested = trigger_window['High'].max() >= ob.bottom
-                
-                # Liquidity Sweep: Did price wick ABOVE the OB top, but current close is safely BELOW it?
-                liquidity_swept = (trigger_window['High'].max() > ob.top) and (current_price <= ob.top)
-                
-                # Reversal: Did current candle close red (sellers stepped in)?
-                bearish_rejection = current_price < c_open
-                
-                if ob_retested and liquidity_swept and bearish_rejection:
-                    
-                    entry = current_price
-                    stop = trigger_window['High'].max() * 1.002 # SL slightly above the sweep wick
-                    
-                    target = getattr(ob, 'swing_target', np.nan)
-                    if pd.isna(target) or target >= entry:
-                        target = smc_df['Last_Swing_Low'].iloc[-1] if 'Last_Swing_Low' in smc_df.columns else np.nan
-                        if pd.isna(target) or target >= entry:
-                             target = entry - (1.5 * (stop - entry))
-                             
-                    risk = stop - entry
-                    rr = (entry - target) / risk if risk > 0 else 0
-                    
-                    if rr >= 1.0:
-                        actionable_setups.append({
-                            'Ticker': ticker,
-                            'Asset_Class': asset_class,
-                            'Direction': '🔴 SHORT (OB+FVG Sweep)',
-                            'Live_Price': round(current_price, 2),
-                            'Entry': round(entry, 2),
-                            'Stop_Loss': round(stop, 2),
-                            'Target': round(target, 2),
-                            'R:R': round(rr, 2),
-                            'OB_Date': str(ob.created_at.date() if hasattr(ob.created_at, 'date') else ob.created_at)
-                        })
-                        break
+                actionable_setups.append({
+                    'Ticker': ticker,
+                    'Asset_Class': asset_class,
+                    'Direction': f"{'🟢 LONG' if final_state['direction'] == 'LONG' else '🔴 SHORT'} (Sweep & Shift)",
+                    'Live_Price': round(current_price, 2),
+                    'Entry': round(entry, 2),
+                    'Stop_Loss': round(stop, 2),
+                    'Target': round(target, 2),
+                    'R:R': round(rr, 2),
+                    'OB_Date': final_state['date']
+                })
 
         return radar_record, actionable_setups
-
     except Exception as e:
-        print(f"[!] Warning: Error scanning {ticker}: {e}")
         return None, []
-
 
 def run_master_market_scan(
     scan_commodities: bool = True, 
