@@ -110,7 +110,7 @@ class SMCMitigationTracker:
             self.df.iat[i, self.df.columns.get_loc('Active_Bear_OB_Count')] = len(self.active_bearish_obs)
             
         return self.df
-        class ICTSweepAndShiftEngine:
+class ICTSweepAndShiftEngine:
     """
     Event-driven State Machine. Tracks the exact chronological sequence:
     Searching -> Swept Liquidity -> MSS Confirmed (with FVG) -> In Trade.
