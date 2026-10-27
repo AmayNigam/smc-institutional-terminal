@@ -139,6 +139,10 @@ class ICTSweepAndShiftEngine:
                         if pd.notna(past_high) and past_high > current['Low']:
                             target = past_high
                             break
+                    
+                    # BUG FIX 1: Fallback target if no structure exists
+                    if pd.isna(target):
+                        target = current['Low'] * 1.02
                             
                     setup_data = {
                         'direction': 'LONG',
@@ -158,6 +162,10 @@ class ICTSweepAndShiftEngine:
                         if pd.notna(past_low) and past_low < current['High']:
                             target = past_low
                             break
+                    
+                    # BUG FIX 1: Fallback target if no structure exists
+                    if pd.isna(target):
+                        target = current['High'] * 0.98
                             
                     setup_data = {
                         'direction': 'SHORT',
@@ -177,7 +185,6 @@ class ICTSweepAndShiftEngine:
                     if current.get('Bullish_FVG', False) or prev.get('Bullish_FVG', False):
                         state = "MSS_CONFIRMED"
                         setup_data['entry_price'] = current['Bullish_FVG_Top'] if current.get('Bullish_FVG') else prev['Bullish_FVG_Top']
-                        # Tighten the Stop Loss to just below the sweep, not an arbitrary 0.2%
                         setup_data['stop_loss'] = setup_data['sweep_low'] - (current['ATR'] * 0.1) if 'ATR' in current else setup_data['sweep_low'] * 0.998
                         setup_data['date'] = self.df.index[i].strftime('%Y-%m-%d')
                     else:
@@ -191,7 +198,6 @@ class ICTSweepAndShiftEngine:
                     if current.get('Bearish_FVG', False) or prev.get('Bearish_FVG', False):
                         state = "MSS_CONFIRMED"
                         setup_data['entry_price'] = current['Bearish_FVG_Bottom'] if current.get('Bearish_FVG') else prev['Bearish_FVG_Bottom']
-                        # Tighten the Stop Loss to just above the sweep
                         setup_data['stop_loss'] = setup_data['sweep_high'] + (current['ATR'] * 0.1) if 'ATR' in current else setup_data['sweep_high'] * 1.002
                         setup_data['date'] = self.df.index[i].strftime('%Y-%m-%d')
                     else:
