@@ -95,10 +95,13 @@ def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, p
             stop = final_state['stop_loss']
             target = final_state['target']
             
-            # Failsafe RR calculation
+            # BUG FIX 2: Prevent ZeroDivisionError on flat candles
             risk = abs(entry - stop)
+            if risk == 0:
+                risk = 0.05  # Minimum tick size fallback
+                
             reward = abs(target - entry)
-            rr = reward / risk if risk > 0 else 0
+            rr = round(reward / risk, 2)
 
             # Only output if price hasn't run away from the entry yet
             if (final_state['direction'] == 'LONG' and current_price <= entry * 1.02) or \
@@ -164,82 +167,4 @@ def run_master_market_scan(
     
     for i in range(0, len(tickers), chunk_size):
         chunk = tickers[i : i + chunk_size]
-        print(f"    -> Fetching chunk {i//chunk_size + 1} ({len(chunk)} tickers)...")
-        
-        # Download sequential chunk with NO multithreading
-        temp_data = yf.download(chunk, start="2022-01-01", interval="1d", group_by="ticker", threads=False, progress=False)
-        
-        # Align MultiIndex columns properly before concatenating
-        if not temp_data.empty:
-            if batch_raw.empty:
-                batch_raw = temp_data
-            else:
-                # Use concat to merge the new columns into the master DataFrame
-                batch_raw = pd.concat([batch_raw, temp_data], axis=1)
-                
-        # Sleep to reset the rate limit window
-        time.sleep(2.5) 
-        
-    print("[+] Market data pre-fetching complete.")
-
-    # 2. Iterate through the in-memory batch instead of making network calls
-    for idx, (ticker, asset_class) in enumerate(scan_queue):
-        # Extract and clean data for the specific ticker safely
-        try:
-            # When multiple tickers are downloaded, yfinance returns a MultiIndex.
-            # When a chunk only has 1 ticker (e.g. the very last one), it might return a flat index.
-            if isinstance(batch_raw.columns, pd.MultiIndex):
-                raw_df = batch_raw[ticker].dropna(how='all')
-            else:
-                raw_df = batch_raw.dropna(how='all')
-                
-            ticker_df = clean_ohlcv_data(raw_df)
-        except Exception:
-            ticker_df = None
-            
-        # Pass the pre-loaded dataframe directly into the scanner
-        radar_rec, alerts = scan_single_ticker(ticker, asset_class, ticker_df, proximity_pct=proximity_pct)
-        
-        if radar_rec:
-            all_radar_records.append(radar_rec)
-        if alerts:
-            all_actionable_alerts.extend(alerts)
-
-    radar_df = pd.DataFrame(all_radar_records)
-    alerts_df = pd.DataFrame(all_actionable_alerts)
-
-    print(f"\n{'='*75}")
-    print(" [RADAR] MASTER ASSET RADAR BOARD (Current Location & Nearest Key Zones)")
-    print(f"{'='*75}\n")
-    if radar_df.empty:
-        radar_df = pd.DataFrame(columns=RADAR_SCHEMA)
-    else:
-        display_cols = ['Ticker', 'Asset_Class', 'Live_Price', 'Trend', 'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%']
-        print(radar_df[display_cols].to_string(index=False))
-
-    radar_df.to_csv("SMC_MASTER_RADAR_FEED.csv", index=False)
-
-    print(f"\n{'='*75}")
-    print(f" [STRIKE] HIGH-PROBABILITY CONFIRMED ALERTS")
-    print(f"{'='*75}\n")
-
-    if alerts_df.empty:
-        print("[!] No assets currently show a confirmed reversal inside a strike zone.")
-        alerts_df = pd.DataFrame(columns=ALERT_SCHEMA)
-    else:
-        alerts_df = alerts_df.sort_values(by='R:R', ascending=False)
-        print(alerts_df.to_string(index=False))
-
-    alerts_df.to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
-    print(f"\n[+] Saved confirmed setups to SMC_ACTIONABLE_ALERTS.csv")
-    print(f"\n{'='*75}")
-    print(" SCAN RUN COMPLETE. DATA IS CACHED & DASHBOARD-READY.")
-    print(f"{'='*75}\n")
-
-if __name__ == "__main__":
-    run_master_market_scan(
-        scan_commodities=True,
-        scan_nifty_core=True,
-        scan_all_nse=False,
-        proximity_pct=0.05
-    )
+        print(f"    -> Fetching chunk {i//chunk_size + 1} ({len
