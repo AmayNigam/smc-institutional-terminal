@@ -139,33 +139,37 @@ with tabs[0]:
     
     alerts_file = "SMC_ACTIONABLE_ALERTS.csv"
     if os.path.exists(alerts_file):
-        alerts_df = pd.read_csv(alerts_file)
-        if not alerts_df.empty:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total Confirmed Setups", len(alerts_df))
-            with col2:
-                longs_count = len(alerts_df[alerts_df['Direction'].str.contains('LONG', na=False)])
-                st.metric("Long Setups", longs_count)
-            with col3:
-                shorts_count = len(alerts_df[alerts_df['Direction'].str.contains('SHORT', na=False)])
-                st.metric("Short Setups", shorts_count)
-            with col4:
-                top_rr = alerts_df['R:R'].max() if 'R:R' in alerts_df.columns else 0.0
-                st.metric("Peak R:R Available", f"1 : {top_rr}")
+        try:
+            # BUG FIX 3: Catch completely blank files safely to prevent Streamlit crashes
+            alerts_df = pd.read_csv(alerts_file)
+            
+            if not alerts_df.empty:
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Confirmed Setups", len(alerts_df))
+                with col2:
+                    longs_count = len(alerts_df[alerts_df['Direction'].str.contains('LONG', na=False)])
+                    st.metric("Long Setups", longs_count)
+                with col3:
+                    shorts_count = len(alerts_df[alerts_df['Direction'].str.contains('SHORT', na=False)])
+                    st.metric("Short Setups", shorts_count)
+                with col4:
+                    top_rr = alerts_df['R:R'].max() if 'R:R' in alerts_df.columns else 0.0
+                    st.metric("Peak R:R Available", f"1 : {top_rr}")
 
-            def highlight_direction(val):
-                if 'LONG' in str(val):
-                    return 'background-color: rgba(8, 153, 129, 0.25); color: #089981; font-weight: bold;'
-                elif 'SHORT' in str(val):
-                    return 'background-color: rgba(242, 54, 69, 0.25); color: #f23645; font-weight: bold;'
-                return ''
+                def highlight_direction(val):
+                    if 'LONG' in str(val):
+                        return 'background-color: rgba(8, 153, 129, 0.25); color: #089981; font-weight: bold;'
+                    elif 'SHORT' in str(val):
+                        return 'background-color: rgba(242, 54, 69, 0.25); color: #f23645; font-weight: bold;'
+                    return ''
 
-            styled_df = alerts_df.style.map(highlight_direction, subset=['Direction'])
-            # HIDE INDEX ADDED HERE
-            st.dataframe(styled_df, use_container_width=True, height=380, hide_index=True)
-        else:
-            st.warning("No assets currently in confirmed strike zone. Prices are floating between zones.")
+                styled_df = alerts_df.style.map(highlight_direction, subset=['Direction'])
+                st.dataframe(styled_df, use_container_width=True, height=380, hide_index=True)
+            else:
+                st.warning("No assets currently in confirmed strike zone. Prices are floating between zones.")
+        except pd.errors.EmptyDataError:
+            st.warning("No assets currently in confirmed strike zone. Engine is waiting for structural shifts.")
     else:
         st.info("No alert feed generated yet. Click 'Run Full Market Scan' in the sidebar.")
 
