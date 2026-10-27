@@ -147,20 +147,49 @@ def run_master_market_scan(
     import yfinance as yf
     from data_loader import clean_ohlcv_data
 
-    # 1. Pre-fetch all data in one multithreaded network call BEFORE the loop
+   # 1. Pre-fetch all data in chunked batches to prevent Yahoo Finance rate limits
+    import time
     tickers = [t[0] for t in scan_queue]
-    print(f"[*] Pre-fetching batch market data for {len(tickers)} assets...")
-    batch_raw = yf.download(tickers, start="2022-01-01", interval="1d", group_by="ticker", threads=True)
+    print(f"[*] Pre-fetching batch market data for {len(tickers)} assets in chunks...")
+    
+    batch_raw = pd.DataFrame()
+    chunk_size = 100
+    
+    for i in range(0, len(tickers), chunk_size):
+        chunk = tickers[i : i + chunk_size]
+        print(f"    -> Fetching chunk {i//chunk_size + 1} ({len(chunk)} tickers)...")
+        
+        # Download sequential chunk with NO multithreading
+        temp_data = yf.download(chunk, start="2022-01-01", interval="1d", group_by="ticker", threads=False, progress=False)
+        
+        # Align MultiIndex columns properly before concatenating
+        if not temp_data.empty:
+            if batch_raw.empty:
+                batch_raw = temp_data
+            else:
+                # Use concat to merge the new columns into the master DataFrame
+                batch_raw = pd.concat([batch_raw, temp_data], axis=1)
+                
+        # Sleep to reset the rate limit window
+        time.sleep(2.5) 
+        
+    print("[+] Market data pre-fetching complete.")
 
     # 2. Iterate through the in-memory batch instead of making network calls
     for idx, (ticker, asset_class) in enumerate(scan_queue):
         # Extract and clean data for the specific ticker safely
         try:
-            raw_df = batch_raw[ticker].dropna(how='all') if len(tickers) > 1 else batch_raw.dropna(how='all')
+            # When multiple tickers are downloaded, yfinance returns a MultiIndex.
+            # When a chunk only has 1 ticker (e.g. the very last one), it might return a flat index.
+            if isinstance(batch_raw.columns, pd.MultiIndex):
+                raw_df = batch_raw[ticker].dropna(how='all')
+            else:
+                raw_df = batch_raw.dropna(how='all')
+                
             ticker_df = clean_ohlcv_data(raw_df)
         except Exception:
             ticker_df = None
-
+            
         # Pass the pre-loaded dataframe directly into the scanner
         radar_rec, alerts = scan_single_ticker(ticker, asset_class, ticker_df, proximity_pct=proximity_pct)
         
