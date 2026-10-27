@@ -68,16 +68,23 @@ def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, p
         ict_engine = ICTSweepAndShiftEngine(smc_df)
         final_state = ict_engine.run_state_machine()
 
+        # Calculate distances if the levels exist
+        sweep_low = final_state.get('sweep_low', None)
+        sweep_high = final_state.get('sweep_high', None)
+        
+        dist_demand_pct = round(((current_price - sweep_low) / current_price) * 100, 2) if pd.notna(sweep_low) and current_price > 0 else None
+        dist_supply_pct = round(((sweep_high - current_price) / current_price) * 100, 2) if pd.notna(sweep_high) and current_price > 0 else None
+
         # 2. Basic Radar Record (Status of asset)
         radar_record = {
             'Ticker': ticker,
             'Asset_Class': asset_class,
             'Live_Price': round(current_price, 2),
             'Trend': final_state.get('current_state', 'SEARCHING'),
-            'Nearest_Demand_OB': final_state.get('sweep_low', None),
-            'Demand_Dist_%': None,
-            'Nearest_Supply_OB': final_state.get('sweep_high', None),
-            'Supply_Dist_%': None
+            'Nearest_Demand_OB': round(sweep_low, 2) if pd.notna(sweep_low) else None,
+            'Demand_Dist_%': dist_demand_pct,
+            'Nearest_Supply_OB': round(sweep_high, 2) if pd.notna(sweep_high) else None,
+            'Supply_Dist_%': dist_supply_pct
         }
 
         actionable_setups = []
