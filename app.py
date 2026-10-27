@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
-from universe import get_tickers_by_category
 
 # Ensure current working directory is in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -33,8 +32,8 @@ from master_scanner import run_master_market_scan
 # STREAMLIT PAGE CONFIGURATION
 # ==============================================================================
 st.set_page_config(
-    page_title="SMC Quantitative Institutional Terminal",
-    page_icon="📈",
+    page_title="Alpha Flow | SMC Terminal",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -42,6 +41,11 @@ st.set_page_config(
 # Custom Styling for Sleek Institutional Look
 st.markdown("""
     <style>
+        /* Hide Streamlit default menus and footers */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+
         .main {
             background-color: #0e1117;
         }
@@ -78,6 +82,13 @@ st.markdown("""
         }
     </style>
 """, unsafe_allow_html=True)
+
+# ==============================================================================
+# PROFESSIONAL HEADER
+# ==============================================================================
+st.title("⚡ Alpha Flow Quantitative Terminal")
+st.markdown("**Institutional Smart Money Concepts (SMC) State-Machine Engine** | 🟢 Live Market Data")
+st.markdown("---")
 
 # ==============================================================================
 # SIDEBAR CONTROLS
@@ -150,9 +161,9 @@ with tabs[0]:
                     return 'background-color: rgba(242, 54, 69, 0.25); color: #f23645; font-weight: bold;'
                 return ''
 
-            # FIX: Pandas >= 2.1.0 replaced .applymap() with .map()
             styled_df = alerts_df.style.map(highlight_direction, subset=['Direction'])
-            st.dataframe(styled_df, use_container_width=True, height=380)
+            # HIDE INDEX ADDED HERE
+            st.dataframe(styled_df, use_container_width=True, height=380, hide_index=True)
         else:
             st.warning("No assets currently in confirmed strike zone. Prices are floating between zones.")
     else:
@@ -185,192 +196,12 @@ with tabs[1]:
                     return 'color: #f23645; font-weight: 600;'
                 return ''
 
-            # FIX: Pandas >= 2.1.0 replaced .applymap() with .map()
             styled_radar = filtered_radar.style.map(highlight_trend, subset=['Trend'])
-            st.dataframe(styled_radar, use_container_width=True, height=500)
+            # HIDE INDEX ADDED HERE
+            st.dataframe(styled_radar, use_container_width=True, height=500, hide_index=True)
         else:
             st.warning("Radar feed is empty.")
     else:
         st.info("Radar feed not found. Run the market scan to compile current data.")
 
-# ------------------------------------------------------------------------------
-# TAB 3: INTERACTIVE CHART INSPECTOR
-# ------------------------------------------------------------------------------
-# ---------------------------------------------------------
-    # TAB 3: INTERACTIVE CHART INSPECTOR
-    # ---------------------------------------------------------
-    with tabs[2]:
-        st.subheader("📊 Interactive Institutional Chart Inspector")
-        st.caption("TradingView-grade Plotly visualization showing live Order Blocks (+OB/-OB), Dealing Range, and BOS breaks.")
-
-    
-        # Safely fetch using your built-in function to guarantee all lists load
-        available_tickers = sorted(list(set(
-            get_tickers_by_category("COMMODITIES_GLOBAL") +
-            get_tickers_by_category("NIFTY_50_CORE") +
-            get_tickers_by_category("NSE_ALL")
-        )))
-
-        # Fallback if universes are empty during initialization
-        if not available_tickers:
-            available_tickers = ["RELIANCE.NS"]
-
-        c1, c2, c3 = st.columns([2, 1, 1])
-        with c1:
-            # Dropdown is natively searchable - just click and type
-            default_idx = available_tickers.index("RELIANCE.NS") if "RELIANCE.NS" in available_tickers else 0
-            selected_ticker = st.selectbox("Search & Select Asset:", available_tickers, index=default_idx)
-        with c2:
-            bars_count = st.slider("Lookback Bars:", min_value=60, max_value=350, value=180, step=20)
-        with c3:
-            chart_theme = st.selectbox("Theme:", ["light", "dark"], index=0)
-
-        if selected_ticker:
-            with st.spinner(f"Computing SMC structure and rendering chart for {selected_ticker}..."):
-                
-                data = load_positional_data(selected_ticker, start_date="2022-01-01")
-                
-                if data is not None and 'daily' in data and not data['daily'].empty and len(data['daily']) >= 50:
-                    engine = SMCEngine(data['daily'], swing_length=3)
-                    smc_df = engine.run_all()
-
-                    tracker = SMCMitigationTracker(smc_df)
-                    tracker.run_tracking()
-                    
-                    # ==========================================
-                    # NEW: HUD METRICS (Market Context)
-                    # ==========================================
-                    current_price = smc_df['Close'].iloc[-1]
-                    
-                    bull_obs = [ob for ob in tracker.active_bullish_obs if ob.top <= current_price]
-                    bear_obs = [ob for ob in tracker.active_bearish_obs if ob.bottom >= current_price]
-                    
-                    nearest_demand = max(bull_obs, key=lambda x: x.top) if bull_obs else None
-                    nearest_supply = min(bear_obs, key=lambda x: x.bottom) if bear_obs else None
-                    
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    m1, m2, m3, m4 = st.columns(4)
-                    
-                    m1.metric("Live Price", f"₹{current_price:,.2f}")
-                    
-                    if nearest_demand:
-                        dist_d = ((current_price - nearest_demand.top) / current_price) * 100
-                        m2.metric("Nearest Demand (OB)", f"₹{nearest_demand.top:,.2f}", f"-{dist_d:.1f}% away", delta_color="off")
-                    else:
-                        m2.metric("Nearest Demand (OB)", "None Found")
-                        
-                    if nearest_supply:
-                        dist_s = ((nearest_supply.bottom - current_price) / current_price) * 100
-                        m3.metric("Nearest Supply (OB)", f"₹{nearest_supply.bottom:,.2f}", f"+{dist_s:.1f}% away", delta_color="off")
-                    else:
-                        m3.metric("Nearest Supply (OB)", "None Found")
-                        
-                    macro_high = smc_df['Confirmed_Swing_High'].max()
-                    macro_low = smc_df['Confirmed_Swing_Low'].min()
-                    
-                    if not pd.isna(macro_high) and not pd.isna(macro_low):
-                        eq_level = (macro_high + macro_low) / 2
-                        matrix_status = "PREMIUM (Sell Zone)" if current_price > eq_level else "DISCOUNT (Buy Zone)"
-                    else:
-                        matrix_status = "CALCULATING..."
-                        
-                    m4.metric("Macro Matrix", matrix_status)
-                    st.markdown("---")
-                    
-                    # ==========================================
-                    # RENDER CHART
-                    # ==========================================
-                    chart_engine = SMCChartEngine(smc_df, tracker, selected_ticker)
-                    fig = chart_engine.render_chart(num_bars=bars_count, save_html=False, theme=chart_theme)
-
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.error(f"Insufficient data to generate chart for {selected_ticker}.")
-
-# ------------------------------------------------------------------------------
-# TAB 4: STRATEGY BACKTEST AUDIT
-# ------------------------------------------------------------------------------
-with tabs[3]:
-    st.subheader("🔬 Client Performance & Backtest Audit")
-    st.caption("Run institutional walk-forward backtests with confirmation rules, dynamic ATR stops, and breakeven trailing.")
-    
-    # Load all 2,200+ tickers dynamically from the scanned radar feed
-    try:
-        import pandas as pd
-        feed_df = pd.read_csv("SMC_MASTER_RADAR_FEED.csv")
-        full_ticker_list = sorted([str(t) for t in feed_df["Ticker"].dropna().unique() if str(t).strip()])
-    except Exception:
-        full_ticker_list = available_tickers
-
-    b_col1, b_col2, b_col3 = st.columns([2, 1, 1])
-    with b_col1:
-        custom_input = st.text_input("Enter Any Ticker:", placeholder="e.g. PCJEWELLER.NS")
-        selected_dropdown = st.selectbox("Or Pick From Scanned Universe:", full_ticker_list, index=0)
-        bt_ticker = custom_input.strip().upper() if custom_input.strip() else selected_dropdown
-    with b_col2:
-        bt_start = st.selectbox("Historical Start Date:", ["2020-01-01", "2021-01-01", "2022-01-01"], index=0)
-    with b_col3:
-        bt_min_rr = st.number_input("Minimum R:R Threshold:", min_value=1.0, max_value=5.0, value=1.0, step=0.5)
-
-    if st.button("Run Performance Audit", use_container_width=True):
-        if ClientSMCBacktester is None:
-            st.error("Could not find the backtester code. Please make sure your backtester file is saved as 'advanced_backtester.py' or 'backtester.py'.")
-        else:
-            with st.spinner(f"Backtesting {bt_ticker} on daily timeframe..."):
-                tester = ClientSMCBacktester(
-                    ticker=bt_ticker,
-                    start_date=bt_start,
-                    min_rr=bt_min_rr,
-                    risk_per_trade_pct=0.01,
-                    initial_capital=100000.0
-                )
-                tester.run_backtest()
-                
-                if tester.trades:
-                    trades_df = pd.DataFrame(tester.trades)
-                    wins = len(trades_df[trades_df['pnl_r'] > 0])
-                    losses = len(trades_df[trades_df['pnl_r'] < 0])
-                    scratches = len(trades_df[trades_df['pnl_r'] == 0])
-                    total = len(trades_df)
-                    client_accuracy = ((wins + scratches) / total) * 100
-                    
-                    k1, k2, k3, k4, k5 = st.columns(5)
-                    with k1:
-                        st.metric("Total Trades", total)
-                    with k2:
-                        st.metric("Trade Accuracy (Win+BE)", f"{client_accuracy:.2f}%")
-                    with k3:
-                        tot_prof = trades_df[trades_df['pnl_cash'] > 0]['pnl_cash'].sum()
-                        tot_loss = abs(trades_df[trades_df['pnl_cash'] < 0]['pnl_cash'].sum())
-                        pf = tot_prof / tot_loss if tot_loss > 0 else 0
-                        st.metric("Profit Factor", f"{pf:.2f}")
-                    with k4:
-                        eq_df = pd.DataFrame(tester.equity_curve).set_index('Date')
-                        tot_ret = ((eq_df['Capital'].iloc[-1] - 100000.0) / 100000.0) * 100
-                        st.metric("Net Portfolio Return", f"+{tot_ret:.2f}%")
-                    with k5:
-                        eq_df['Peak'] = eq_df['Capital'].cummax()
-                        eq_df['DD'] = (eq_df['Capital'] - eq_df['Peak']) / eq_df['Peak']
-                        max_dd = eq_df['DD'].min() * 100
-                        st.metric("Max Peak Drawdown", f"{max_dd:.2f}%")
-
-                    st.markdown("#### Portfolio Equity Curve")
-                    fig_eq = go.Figure()
-                    fig_eq.add_trace(go.Scatter(
-                        x=eq_df.index, y=eq_df['Capital'],
-                        mode='lines', line=dict(color='#2157f3', width=2.5),
-                        name='Capital ($)'
-                    ))
-                    fig_eq.update_layout(
-                        template="plotly_dark",
-                        height=350,
-                        margin=dict(l=20, r=20, t=30, b=20),
-                        yaxis=dict(tickformat=',.0f')
-                    )
-                    st.plotly_chart(fig_eq, use_container_width=True)
-
-                    st.markdown("#### Executed Trades Ledger")
-                    ledger_cols = ['signal_date', 'direction', 'entry_price', 'exit_price', 'exit_reason', 'pnl_r', 'pnl_pct', 'capital_after']
-                    st.dataframe(trades_df[ledger_cols].tail(25), use_container_width=True)
-                else:
-                    st.warning("No trades met the criteria during this historical window.")
+# ------------------------------------------------
