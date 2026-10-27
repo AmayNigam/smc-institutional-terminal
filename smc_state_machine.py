@@ -11,7 +11,7 @@ class SMCZone:
         self.eq = eq
         self.atr_at_creation = atr
         self.pd_matrix = pd_matrix 
-        self.swing_target = swing_target # NEW: Immediate Structural Liquidity Target
+        self.swing_target = swing_target 
         
         self.is_mitigated = False
         self.mitigated_at = None
@@ -32,25 +32,20 @@ class SMCMitigationTracker:
             is_up_candle = row['Close'] > row['Open']
             
             if direction == 'BULLISH' and is_down_candle:
-                # --- NEW: LIQUIDITY SWEEP CHECK ---
-                # Check the 5 candles prior to this candidate to ensure it swept a local low
                 local_lows = self.df['Low'].iloc[max(0, i - 5):i]
                 if not local_lows.empty and row['Low'] > local_lows.min():
-                    continue  # Discard: Did not sweep liquidity, keep looking
+                    continue  
                 return (self.df.index[i], row['High'], row['Low'])
                 
             elif direction == 'BEARISH' and is_up_candle:
-                # --- NEW: LIQUIDITY SWEEP CHECK ---
-                # Check the 5 candles prior to this candidate to ensure it swept a local high
                 local_highs = self.df['High'].iloc[max(0, i - 5):i]
                 if not local_highs.empty and row['High'] < local_highs.max():
-                    continue  # Discard: Did not sweep liquidity, keep looking
+                    continue  
                 return (self.df.index[i], row['High'], row['Low'])
                 
         return None, None, None
 
     def run_tracking(self) -> pd.DataFrame:
-        # Pre-allocate columns directly in the existing memory block
         self.df['Active_Bull_OB_Count'] = 0
         self.df['Active_Bear_OB_Count'] = 0
         
@@ -59,7 +54,6 @@ class SMCMitigationTracker:
             row = self.df.iloc[i]
             c_high, c_low, c_atr = row['High'], row['Low'], row['ATR']
             
-            # Evaluate Mitigation
             remaining_bull_obs = []
             for zone in self.active_bullish_obs:
                 if c_low < zone.bottom:
@@ -84,7 +78,6 @@ class SMCMitigationTracker:
                     remaining_bear_obs.append(zone)
             self.active_bearish_obs = remaining_bear_obs
             
-            # Register New Zones
             pd_state = 'DISCOUNT' if row.get('In_Discount', False) else ('PREMIUM' if row.get('In_Premium', False) else 'UNKNOWN')
             
             if row.get('Bullish_FVG', False):
@@ -105,16 +98,13 @@ class SMCMitigationTracker:
                         ob = SMCZone('ORDER_BLOCK', 'BEARISH', ob_date, ob_top, ob_bottom, ob_eq, c_atr, pd_state, swing_target)
                         self.active_bearish_obs.append(ob)
             
-           # Assign directly using fast integer indexing
             self.df.iat[i, self.df.columns.get_loc('Active_Bull_OB_Count')] = len(self.active_bullish_obs)
             self.df.iat[i, self.df.columns.get_loc('Active_Bear_OB_Count')] = len(self.active_bearish_obs)
             
         return self.df
+
+
 class ICTSweepAndShiftEngine:
-    """
-    Event-driven State Machine. Tracks the exact chronological sequence:
-    Searching -> Swept Liquidity -> MSS Confirmed (with FVG) -> In Trade.
-    """
     def __init__(self, df: pd.DataFrame):
         self.df = df.copy()
 
@@ -128,21 +118,18 @@ class ICTSweepAndShiftEngine:
             
             # --- 1. SEARCHING FOR A LIQUIDITY SWEEP ---
             if state == "SEARCHING":
-                # Sell-side liquidity sweep (Bullish Setup)
+                # Sell-side liquidity sweep (Bullish Setup - LONG)
                 if current['Low'] < current.get('Last_Swing_Low', -1):
                     state = "SWEPT_BULLISH"
                     
-                    # Search backwards for a logical target (a recent swing high that is ABOVE current price)
                     target = current.get('Last_Swing_High', np.nan)
                     for j in range(i-1, max(0, i-20), -1):
                         past_high = self.df['Confirmed_Swing_High'].iloc[j]
                         if pd.notna(past_high) and past_high > current['Low']:
                             target = past_high
                             break
-                    
-                    # BUG FIX 1: Fallback target if no structure exists
                     if pd.isna(target):
-                        target = current['Low'] * 1.02
+                        target = current['Low'] * 1.03
                             
                     setup_data = {
                         'direction': 'LONG',
@@ -151,21 +138,18 @@ class ICTSweepAndShiftEngine:
                         'target': target
                     }
                     
-                # Buy-side liquidity sweep (Bearish Setup)
+                # Buy-side liquidity sweep (Bearish Setup - SHORT)
                 elif current['High'] > current.get('Last_Swing_High', 999999):
                     state = "SWEPT_BEARISH"
                     
-                    # Search backwards for a logical target (a recent swing low that is BELOW current price)
                     target = current.get('Last_Swing_Low', np.nan)
                     for j in range(i-1, max(0, i-20), -1):
                         past_low = self.df['Confirmed_Swing_Low'].iloc[j]
                         if pd.notna(past_low) and past_low < current['High']:
                             target = past_low
                             break
-                    
-                    # BUG FIX 1: Fallback target if no structure exists
                     if pd.isna(target):
-                        target = current['High'] * 0.98
+                        target = current['High'] * 0.97
                             
                     setup_data = {
                         'direction': 'SHORT',
@@ -176,16 +160,21 @@ class ICTSweepAndShiftEngine:
 
             # --- 2. WAITING FOR MARKET STRUCTURE SHIFT & FVG ---
             elif state == "SWEPT_BULLISH":
-                # Invalidation: Drops lower than initial sweep
                 if current['Low'] < setup_data['sweep_low']:
                     setup_data['sweep_low'] = current['Low'] 
                 
-                # MSS Triggered: Closed above prior swing high
                 elif current['Close'] > setup_data['mss_trigger']:
                     if current.get('Bullish_FVG', False) or prev.get('Bullish_FVG', False):
                         state = "MSS_CONFIRMED"
-                        setup_data['entry_price'] = current['Bullish_FVG_Top'] if current.get('Bullish_FVG') else prev['Bullish_FVG_Top']
-                        setup_data['stop_loss'] = setup_data['sweep_low'] - (current['ATR'] * 0.1) if 'ATR' in current else setup_data['sweep_low'] * 0.998
+                        entry = current['Bullish_FVG_Top'] if current.get('Bullish_FVG') else prev['Bullish_FVG_Top']
+                        stop_loss = setup_data['sweep_low'] - (current.get('ATR', entry * 0.01) * 0.2)
+                        
+                        # Ensure target is strictly higher than entry for LONG
+                        target = max(setup_data['target'], entry + (entry - stop_loss) * 2)
+                        
+                        setup_data['entry_price'] = entry
+                        setup_data['stop_loss'] = stop_loss
+                        setup_data['target'] = target
                         setup_data['date'] = self.df.index[i].strftime('%Y-%m-%d')
                     else:
                         state = "SEARCHING"
@@ -197,21 +186,28 @@ class ICTSweepAndShiftEngine:
                 elif current['Close'] < setup_data['mss_trigger']:
                     if current.get('Bearish_FVG', False) or prev.get('Bearish_FVG', False):
                         state = "MSS_CONFIRMED"
-                        setup_data['entry_price'] = current['Bearish_FVG_Bottom'] if current.get('Bearish_FVG') else prev['Bearish_FVG_Bottom']
-                        setup_data['stop_loss'] = setup_data['sweep_high'] + (current['ATR'] * 0.1) if 'ATR' in current else setup_data['sweep_high'] * 1.002
+                        entry = current['Bearish_FVG_Bottom'] if current.get('Bearish_FVG') else prev['Bearish_FVG_Bottom']
+                        stop_loss = setup_data['sweep_high'] + (current.get('ATR', entry * 0.01) * 0.2)
+                        
+                        # CORRECTION: For SHORT, target MUST be strictly LOWER than entry
+                        target = min(setup_data['target'], entry - (stop_loss - entry) * 2)
+                        if target >= entry:
+                            target = entry * 0.97 # Absolute safety fallback
+                        
+                        setup_data['entry_price'] = entry
+                        setup_data['stop_loss'] = stop_loss
+                        setup_data['target'] = target
                         setup_data['date'] = self.df.index[i].strftime('%Y-%m-%d')
                     else:
                         state = "SEARCHING"
 
             # --- 3. WAITING FOR ENTRY (RETRACEMENT) ---
             elif state == "MSS_CONFIRMED":
-                # Invalidation: Stop loss hit before entry
                 if setup_data['direction'] == 'LONG' and current['Low'] < setup_data['stop_loss']:
                     state = "SEARCHING"
                 elif setup_data['direction'] == 'SHORT' and current['High'] > setup_data['stop_loss']:
                     state = "SEARCHING"
                 
-                # Triggered Entry
                 elif setup_data['direction'] == 'LONG' and current['Low'] <= setup_data['entry_price']:
                     state = "IN_TRADE"
                 elif setup_data['direction'] == 'SHORT' and current['High'] >= setup_data['entry_price']:
