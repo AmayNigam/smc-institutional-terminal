@@ -131,20 +131,39 @@ class ICTSweepAndShiftEngine:
                 # Sell-side liquidity sweep (Bullish Setup)
                 if current['Low'] < current.get('Last_Swing_Low', -1):
                     state = "SWEPT_BULLISH"
+                    
+                    # Search backwards for a logical target (a recent swing high that is ABOVE current price)
+                    target = current.get('Last_Swing_High', np.nan)
+                    for j in range(i-1, max(0, i-20), -1):
+                        past_high = self.df['Confirmed_Swing_High'].iloc[j]
+                        if pd.notna(past_high) and past_high > current['Low']:
+                            target = past_high
+                            break
+                            
                     setup_data = {
                         'direction': 'LONG',
                         'sweep_low': current['Low'],
                         'mss_trigger': current.get('Last_Swing_High', 999999),
-                        'target': current.get('Last_Swing_High', np.nan)
+                        'target': target
                     }
+                    
                 # Buy-side liquidity sweep (Bearish Setup)
                 elif current['High'] > current.get('Last_Swing_High', 999999):
                     state = "SWEPT_BEARISH"
+                    
+                    # Search backwards for a logical target (a recent swing low that is BELOW current price)
+                    target = current.get('Last_Swing_Low', np.nan)
+                    for j in range(i-1, max(0, i-20), -1):
+                        past_low = self.df['Confirmed_Swing_Low'].iloc[j]
+                        if pd.notna(past_low) and past_low < current['High']:
+                            target = past_low
+                            break
+                            
                     setup_data = {
                         'direction': 'SHORT',
                         'sweep_high': current['High'],
                         'mss_trigger': current.get('Last_Swing_Low', -1),
-                        'target': current.get('Last_Swing_Low', np.nan)
+                        'target': target
                     }
 
             # --- 2. WAITING FOR MARKET STRUCTURE SHIFT & FVG ---
@@ -158,7 +177,8 @@ class ICTSweepAndShiftEngine:
                     if current.get('Bullish_FVG', False) or prev.get('Bullish_FVG', False):
                         state = "MSS_CONFIRMED"
                         setup_data['entry_price'] = current['Bullish_FVG_Top'] if current.get('Bullish_FVG') else prev['Bullish_FVG_Top']
-                        setup_data['stop_loss'] = setup_data['sweep_low'] * 0.998
+                        # Tighten the Stop Loss to just below the sweep, not an arbitrary 0.2%
+                        setup_data['stop_loss'] = setup_data['sweep_low'] - (current['ATR'] * 0.1) if 'ATR' in current else setup_data['sweep_low'] * 0.998
                         setup_data['date'] = self.df.index[i].strftime('%Y-%m-%d')
                     else:
                         state = "SEARCHING"
@@ -171,7 +191,8 @@ class ICTSweepAndShiftEngine:
                     if current.get('Bearish_FVG', False) or prev.get('Bearish_FVG', False):
                         state = "MSS_CONFIRMED"
                         setup_data['entry_price'] = current['Bearish_FVG_Bottom'] if current.get('Bearish_FVG') else prev['Bearish_FVG_Bottom']
-                        setup_data['stop_loss'] = setup_data['sweep_high'] * 1.002
+                        # Tighten the Stop Loss to just above the sweep
+                        setup_data['stop_loss'] = setup_data['sweep_high'] + (current['ATR'] * 0.1) if 'ATR' in current else setup_data['sweep_high'] * 1.002
                         setup_data['date'] = self.df.index[i].strftime('%Y-%m-%d')
                     else:
                         state = "SEARCHING"
@@ -190,6 +211,5 @@ class ICTSweepAndShiftEngine:
                 elif setup_data['direction'] == 'SHORT' and current['High'] >= setup_data['entry_price']:
                     state = "IN_TRADE"
 
-        # Return the final state of the asset on the current day
         setup_data['current_state'] = state
         return setup_data
