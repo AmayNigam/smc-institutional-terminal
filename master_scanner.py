@@ -64,26 +64,37 @@ def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, p
         smc_df = engine.run_all()
         current_price = smc_df['Close'].iloc[-1]
 
-        # 1. Run the new ICT State Machine
+        # 1. Run Mitigation Tracker to find ALL active Demand and Supply OBs simultaneously
+        tracker = SMCMitigationTracker(smc_df)
+        tracker.run_tracking()
+
+        # Filter active bullish OBs below current price
+        bull_obs = [ob for ob in tracker.active_bullish_obs if ob.top <= current_price]
+        nearest_demand_ob = max(bull_obs, key=lambda x: x.top) if bull_obs else None
+        demand_level = nearest_demand_ob.top if nearest_demand_ob else np.nan
+
+        # Filter active bearish OBs above current price
+        bear_obs = [ob for ob in tracker.active_bearish_obs if ob.bottom >= current_price]
+        nearest_supply_ob = min(bear_obs, key=lambda x: x.bottom) if bear_obs else None
+        supply_level = nearest_supply_ob.bottom if nearest_supply_ob else np.nan
+
+        # Calculate accurate distance percentages
+        dist_demand_pct = round(((current_price - demand_level) / current_price) * 100, 2) if pd.notna(demand_level) and current_price > 0 else None
+        dist_supply_pct = round(((supply_level - current_price) / current_price) * 100, 2) if pd.notna(supply_level) and current_price > 0 else None
+
+        # 2. Run State Machine strictly for Actionable Strike Alerts
         ict_engine = ICTSweepAndShiftEngine(smc_df)
         final_state = ict_engine.run_state_machine()
 
-        # Calculate distances if the levels exist
-        sweep_low = final_state.get('sweep_low', None)
-        sweep_high = final_state.get('sweep_high', None)
-        
-        dist_demand_pct = round(((current_price - sweep_low) / current_price) * 100, 2) if pd.notna(sweep_low) and current_price > 0 else None
-        dist_supply_pct = round(((sweep_high - current_price) / current_price) * 100, 2) if pd.notna(sweep_high) and current_price > 0 else None
-
-        # 2. Basic Radar Record (Status of asset)
+        # Radar Record displaying BOTH Demand and Supply simultaneously
         radar_record = {
             'Ticker': ticker,
             'Asset_Class': asset_class,
             'Live_Price': round(current_price, 2),
             'Trend': final_state.get('current_state', 'SEARCHING'),
-            'Nearest_Demand_OB': round(sweep_low, 2) if pd.notna(sweep_low) else None,
+            'Nearest_Demand_OB': round(demand_level, 2) if pd.notna(demand_level) else None,
             'Demand_Dist_%': dist_demand_pct,
-            'Nearest_Supply_OB': round(sweep_high, 2) if pd.notna(sweep_high) else None,
+            'Nearest_Supply_OB': round(supply_level, 2) if pd.notna(supply_level) else None,
             'Supply_Dist_%': dist_supply_pct
         }
 
@@ -95,15 +106,13 @@ def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, p
             stop = final_state['stop_loss']
             target = final_state['target']
             
-            # BUG FIX 2: Prevent ZeroDivisionError on flat candles
             risk = abs(entry - stop)
             if risk == 0:
-                risk = 0.05  # Minimum tick size fallback
+                risk = 0.05  
                 
             reward = abs(target - entry)
             rr = round(reward / risk, 2)
 
-            # Only output if price hasn't run away from the entry yet
             if (final_state['direction'] == 'LONG' and current_price <= entry * 1.02) or \
                (final_state['direction'] == 'SHORT' and current_price >= entry * 0.98):
                 
