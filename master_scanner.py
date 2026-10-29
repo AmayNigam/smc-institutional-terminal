@@ -113,8 +113,8 @@ def scan_single_ticker(ticker: str, asset_class: str, ticker_df: pd.DataFrame, p
             reward = abs(target - entry)
             rr = round(reward / risk, 2)
 
-            if (final_state['direction'] == 'LONG' and current_price <= entry * 1.02) or \
-               (final_state['direction'] == 'SHORT' and current_price >= entry * 0.98):
+            if (final_state['direction'] == 'LONG' and current_price <= entry * (1 + proximity_pct)) or \
+               (final_state['direction'] == 'SHORT' and current_price >= entry * (1 - proximity_pct)):
                 
                 actionable_setups.append({
                     'Ticker': ticker,
