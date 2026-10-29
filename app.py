@@ -173,6 +173,37 @@ with st.expander("⚙️ Master Scanner Execution (Update Live Market Data)", ex
 
 st.markdown("<br>", unsafe_allow_html=True)
 
+
+# ------------------------------------------------------------------------------
+# HELPER DICTIONARY FOR COMMODITIES
+# ------------------------------------------------------------------------------
+COMMODITY_MAP = {
+    "GC=F": "Gold (USD)",
+    "SI=F": "Silver (USD)",
+    "CL=F": "Crude Oil (USD)",
+    "BZ=F": "Brent Crude (USD)",
+    "HG=F": "Copper (USD)",
+    "NG=F": "Natural Gas (USD)",
+    "PA=F": "Palladium (USD)",
+    "PL=F": "Platinum (USD)"
+}
+
+def format_price(row, col_name):
+    """Dynamically formats price based on asset class"""
+    val = row[col_name]
+    if pd.isna(val) or val == 'None':
+        return "None"
+    
+    try:
+        val_float = float(val)
+        if "COMMODITY" in str(row['Asset_Class']):
+            return f"$ {val_float:,.2f}"
+        else:
+            return f"₹ {val_float:,.2f}"
+    except:
+        return val
+
+
 # ==============================================================================
 # MAIN DASHBOARD TABS
 # ==============================================================================
@@ -191,24 +222,34 @@ with tabs[0]:
     st.caption("Confirmed entries meeting structural reversal rules within the immediate institutional strike zone.")
     
     if not alerts_df.empty:
+        alerts_display = alerts_df.copy()
+        
+        # Apply readable names
+        alerts_display['Asset'] = alerts_display['Ticker'].map(lambda x: COMMODITY_MAP.get(x, x.replace('.NS', '')))
+        
+        # Apply dynamic currency formatting
+        for col in ['Live_Price', 'Entry', 'Stop_Loss', 'Target']:
+            alerts_display[col] = alerts_display.apply(lambda row: format_price(row, col), axis=1)
+
         def highlight_direction(val):
             if 'LONG' in str(val): return 'background-color: rgba(46, 160, 67, 0.2); color: #2ea043; font-weight: bold; border-left: 4px solid #2ea043;'
             elif 'SHORT' in str(val): return 'background-color: rgba(242, 54, 69, 0.2); color: #f23645; font-weight: bold; border-left: 4px solid #f23645;'
             return ''
         
-        styled_df = alerts_df.style.map(highlight_direction, subset=['Direction'])
+        styled_df = alerts_display.style.map(highlight_direction, subset=['Direction'])
         
         st.dataframe(
             styled_df, 
             use_container_width=True, 
             height=400, 
             hide_index=True,
+            column_order=["Asset", "Asset_Class", "Direction", "Live_Price", "Entry", "Stop_Loss", "Target", "R:R", "OB_Date"],
             column_config={
-                "Ticker": st.column_config.TextColumn("Asset", width="medium"),
-                "Live_Price": st.column_config.NumberColumn("Live Price", format="₹ %.2f"),
-                "Entry": st.column_config.NumberColumn("Entry", format="₹ %.2f"),
-                "Stop_Loss": st.column_config.NumberColumn("Stop Loss", format="₹ %.2f"),
-                "Target": st.column_config.NumberColumn("Target", format="₹ %.2f"),
+                "Asset": st.column_config.TextColumn("Asset", width="medium"),
+                "Live_Price": st.column_config.TextColumn("Live Price"),
+                "Entry": st.column_config.TextColumn("Entry"),
+                "Stop_Loss": st.column_config.TextColumn("Stop Loss"),
+                "Target": st.column_config.TextColumn("Target"),
                 "R:R": st.column_config.ProgressColumn("Risk/Reward Profile", format="1:%.2f", min_value=0, max_value=5),
             }
         )
@@ -226,26 +267,34 @@ with tabs[1]:
     if os.path.exists(radar_file):
         radar_df = pd.read_csv(radar_file)
         if not radar_df.empty:
-            search_query = st.text_input("Filter Ticker / Asset Class:", placeholder="e.g. RELIANCE, GC=F, COMMODITY...")
-            filtered_radar = radar_df if not search_query else radar_df[
-                radar_df['Ticker'].str.contains(search_query, case=False, na=False) |
-                radar_df['Asset_Class'].str.contains(search_query, case=False, na=False)
+            search_query = st.text_input("Filter Asset / Class:", placeholder="e.g. RELIANCE, Gold, COMMODITY...")
+            
+            radar_display = radar_df.copy()
+            # Apply readable names
+            radar_display['Asset'] = radar_display['Ticker'].map(lambda x: COMMODITY_MAP.get(x, x.replace('.NS', '')))
+            
+            filtered_radar = radar_display if not search_query else radar_display[
+                radar_display['Asset'].str.contains(search_query, case=False, na=False) |
+                radar_display['Asset_Class'].str.contains(search_query, case=False, na=False)
             ]
 
-            # VISUAL UPGRADE: Hot-Zone Distance Highlighting
+            # Apply dynamic currency formatting
+            for col in ['Live_Price', 'Nearest_Demand_OB', 'Nearest_Supply_OB']:
+                filtered_radar[col] = filtered_radar.apply(lambda row: format_price(row, col), axis=1)
+
             def heatmap_distance(val):
                 if pd.isna(val): return ''
                 try:
                     v = float(val)
-                    if abs(v) <= 1.5: return 'background-color: rgba(210, 153, 34, 0.4); color: #d29922; font-weight: bold;' # Hot Zone (Gold)
-                    elif v > 1.5 and v <= 5.0: return 'color: #8b949e;' # Warm
-                    else: return 'color: #484f58;' # Cold (Dimmed)
+                    if abs(v) <= 1.5: return 'background-color: rgba(210, 153, 34, 0.4); color: #d29922; font-weight: bold;' 
+                    elif v > 1.5 and v <= 5.0: return 'color: #8b949e;' 
+                    else: return 'color: #484f58;' 
                 except:
                     return ''
 
             def highlight_trend(val):
-                if val == 'BULLISH': return 'color: #2ea043; font-weight: bold;'
-                elif val == 'BEARISH': return 'color: #f23645; font-weight: bold;'
+                if val == 'BULLISH' or 'LONG' in str(val): return 'color: #2ea043; font-weight: bold;'
+                elif val == 'BEARISH' or 'SHORT' in str(val): return 'color: #f23645; font-weight: bold;'
                 return 'color: #8b949e;'
 
             styled_radar = filtered_radar.style\
@@ -257,10 +306,12 @@ with tabs[1]:
                 use_container_width=True, 
                 height=500, 
                 hide_index=True,
+                column_order=["Asset", "Asset_Class", "Live_Price", "Trend", "Nearest_Demand_OB", "Demand_Dist_%", "Nearest_Supply_OB", "Supply_Dist_%"],
                 column_config={
-                    "Live_Price": st.column_config.NumberColumn("Price", format="₹ %.2f"),
-                    "Nearest_Demand_OB": st.column_config.NumberColumn("Nearest Demand", format="₹ %.2f"),
-                    "Nearest_Supply_OB": st.column_config.NumberColumn("Nearest Supply", format="₹ %.2f"),
+                    "Asset": st.column_config.TextColumn("Asset", width="medium"),
+                    "Live_Price": st.column_config.TextColumn("Price"),
+                    "Nearest_Demand_OB": st.column_config.TextColumn("Nearest Demand"),
+                    "Nearest_Supply_OB": st.column_config.TextColumn("Nearest Supply"),
                     "Demand_Dist_%": st.column_config.NumberColumn("Demand Dist. (Gold = Hot)", format="%.2f %%"),
                     "Supply_Dist_%": st.column_config.NumberColumn("Supply Dist. (Gold = Hot)", format="%.2f %%"),
                 }
