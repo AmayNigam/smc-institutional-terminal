@@ -69,87 +69,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# PROFESSIONAL HEADER & PERSISTENT HUD
+# GLOBAL SCANNER EXECUTION (COLLAPSED)
 # ==============================================================================
-st.title("⚡ Alpha Flow Quantitative Terminal")
-st.markdown("**Institutional Smart Money Concepts (SMC) State-Machine Engine** | 🟢 Live Market Data")
-
-# Pre-load alerts to build the persistent HUD
-alerts_file = "SMC_ACTIONABLE_ALERTS.csv"
-hud_total, hud_longs, hud_shorts, hud_rr = 0, 0, 0, 0.0
-alerts_df = pd.DataFrame()
-
-if os.path.exists(alerts_file):
-    try:
-        alerts_df = pd.read_csv(alerts_file)
-        if not alerts_df.empty:
-            hud_total = len(alerts_df)
-            hud_longs = len(alerts_df[alerts_df['Direction'].str.contains('LONG', na=False)])
-            hud_shorts = len(alerts_df[alerts_df['Direction'].str.contains('SHORT', na=False)])
-            hud_rr = alerts_df['R:R'].max() if 'R:R' in alerts_df.columns else 0.0
-    except pd.errors.EmptyDataError:
-        pass
-
-st.markdown("---")
-h1, h2, h3, h4 = st.columns(4)
-h1.metric("Active Strike Alerts", hud_total)
-h2.metric("Long Bias Setups", hud_longs)
-h3.metric("Short Bias Setups", hud_shorts)
-h4.metric("Peak Target R:R", f"1 : {hud_rr}")
-st.markdown("<br>", unsafe_allow_html=True)
-
-# ==============================================================================
-# COMMAND CENTER (MAIN PAGE CONTROLS)
-# ==============================================================================
-st.markdown("---")
-st.subheader("🎛️ Terminal Command Center")
-
-# Use columns to lay out the controls horizontally instead of a sidebar
-cmd1, cmd2 = st.columns([1, 1])
-
-with cmd1:
-    st.markdown("**📡 Market Scanner Configuration**")
-    scan_col1, scan_col2 = st.columns([2, 1])
-    
+with st.expander("⚙️ Master Scanner Execution (Update Live Market Data)", expanded=False):
+    scan_col1, scan_col2, scan_col3 = st.columns([2, 2, 1])
     with scan_col1:
         scan_commodities_sel = st.checkbox("Include Global Commodities", value=True)
         scan_nifty_sel = st.checkbox("Include Nifty 50 Core", value=True)
         scan_nse_all_sel = st.checkbox("Full NSE Universe", value=False)
-        
     with scan_col2:
-        proximity_slider = st.slider("Strike Zone (%)", min_value=1.0, max_value=10.0, value=5.0, step=0.5) / 100.0
-        
-    if st.button("Run Master Scan", use_container_width=True, type="primary"):
-        with st.spinner("Executing quantitative SMC scan..."):
-            run_master_market_scan(
-                scan_commodities=scan_commodities_sel,
-                scan_nifty_core=scan_nifty_sel,
-                scan_all_nse=scan_nse_all_sel,
-                proximity_pct=proximity_slider
-            )
-        st.success("Scan Complete!")
+        proximity_slider = st.slider("Strike Zone Window (%)", min_value=1.0, max_value=10.0, value=5.0, step=0.5) / 100.0
+    with scan_col3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Run Master Scan", use_container_width=True, type="primary"):
+            with st.spinner("Executing quantitative SMC scan..."):
+                run_master_market_scan(scan_commodities_sel, scan_nifty_sel, scan_nse_all_sel, proximity_slider)
+            st.success("Scan Complete! Data refreshed.")
 
-with cmd2:
-    st.markdown("**🔬 Strategy Backtest Engine**")
-    bt_col1, bt_col2 = st.columns([1, 1])
-    
-    try:
-        feed_df = pd.read_csv("SMC_MASTER_RADAR_FEED.csv")
-        full_ticker_list = sorted([str(t) for t in feed_df["Ticker"].dropna().unique() if str(t).strip()])
-    except Exception:
-        full_ticker_list = ["RELIANCE.NS", "HDFCBANK.NS", "TRUALT.NS"]
-
-    with bt_col1:
-        bt_ticker = st.selectbox("Target Asset:", full_ticker_list, index=0)
-        bt_min_rr = st.number_input("Min R:R Threshold:", min_value=1.0, max_value=5.0, value=1.0, step=0.5)
-        
-    with bt_col2:
-        bt_start = st.selectbox("Historical Start:", ["2020-01-01", "2021-01-01", "2022-01-01"], index=0)
-        
-    st.markdown("<br>", unsafe_allow_html=True)
-    run_bt = st.button("Audit Historical Performance", use_container_width=True)
-
-st.markdown("---")
+st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
 # MAIN DASHBOARD TABS
