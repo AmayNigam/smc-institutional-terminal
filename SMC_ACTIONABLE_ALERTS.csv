@@ -1,2 +1,3 @@
 Ticker,Asset_Class,Direction,Live_Price,Entry,Stop_Loss,Target,R:R,OB_Date
-PFS.NS,EQUITY_NSE,🟢 LONG (Sweep & Shift),23.84,22.78,11.51,45.32,2.0,2023-08-08
+NYKAA.NS,EQUITY_NSE,🟢 LONG (Sweep & Shift),349.35,334.5,309.19,385.13,2.0,2026-10-29
+PFS.NS,EQUITY_NSE,🟢 LONG (Sweep & Shift),23.51,22.78,11.51,45.32,2.0,2023-08-08
