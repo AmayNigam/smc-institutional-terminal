@@ -25,12 +25,12 @@ def push_to_sheets(records, sheet_name):
 def run_enterprise_batch():
     print("Initiating Enterprise Multi-Threaded SMC Scan...")
     
-  target_universe = [
+    target_universe = [
         ("RELIANCE.NS", "EQUITY_NIFTY50"),
         ("TCS.NS", "EQUITY_NIFTY50"),
         ("GC=F", "COMMODITY")
     ]
-        
+    
     print(f"Target Universe Size: {len(target_universe)} tickers.")
     if len(target_universe) == 0:
         print("Aborting scan: No tickers loaded.")
