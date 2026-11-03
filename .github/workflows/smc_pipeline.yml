@@ -11,17 +11,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write 
-    steps:
+   steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+        
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+          
       - name: Install Dependencies
-        run: pip install pandas numpy yfinance ta 
+        run: pip install -r requirements.txt
+        
       - name: Execute Multi-Threaded Engine
         run: python backend_scanner.py
+        
       - name: Commit and Push CSV Updates
         run: |
           git config --global user.name "AlphaFlow-Bot"
