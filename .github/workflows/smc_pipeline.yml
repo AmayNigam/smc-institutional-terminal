@@ -8,8 +8,7 @@ on:
 jobs:
   build_and_scan:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+   
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -25,10 +24,4 @@ jobs:
       - name: Execute Multi-Threaded Engine
         run: python backend_scanner.py
 
-      - name: Commit and Push CSV Updates
-        run: |
-          git config --global user.name "AlphaFlow-Bot"
-          git config --global user.email "bot@alphaflow.com"
-          git add SMC_MASTER_RADAR_FEED.csv SMC_ACTIONABLE_ALERTS.csv
-          git commit -m "Auto-update EOD Market Data" || exit 0
-          git push
+      
