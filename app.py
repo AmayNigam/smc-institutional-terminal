@@ -209,4 +209,197 @@ with tabs[0]:
     
     if not alerts_df.empty:
         alerts_display = alerts_df.copy()
-        alerts
+        alerts_display['Asset'] = alerts_display['Ticker'].map(lambda x: COMMODITY_MAP.get(x, x.replace('.NS', '')))
+        
+        for col in ['Live_Price', 'Entry', 'Stop_Loss', 'Target']:
+            alerts_display[col] = alerts_display.apply(lambda row: format_price(row, col), axis=1)
+
+        def highlight_direction(val):
+            if 'LONG' in str(val): return 'background-color: rgba(46, 160, 67, 0.2); color: #2ea043; font-weight: bold; border-left: 4px solid #2ea043;'
+            elif 'SHORT' in str(val): return 'background-color: rgba(242, 54, 69, 0.2); color: #f23645; font-weight: bold; border-left: 4px solid #f23645;'
+            return ''
+        
+        styled_df = alerts_display.style.map(highlight_direction, subset=['Direction'])
+        
+        st.dataframe(
+            styled_df, 
+            use_container_width=True, 
+            height=400, 
+            hide_index=True,
+            column_order=["Asset", "Asset_Class", "Direction", "Live_Price", "Entry", "Stop_Loss", "Target", "R:R", "OB_Date"],
+            column_config={
+                "Asset": st.column_config.TextColumn("Asset", width="medium"),
+                "Live_Price": st.column_config.TextColumn("Live Price"),
+                "Entry": st.column_config.TextColumn("Entry"),
+                "Stop_Loss": st.column_config.TextColumn("Stop Loss"),
+                "Target": st.column_config.TextColumn("Target"),
+                "R:R": st.column_config.ProgressColumn("Risk/Reward Profile", format="1:%.2f", min_value=0, max_value=5),
+            }
+        )
+    else:
+        st.info("No assets currently in confirmed strike zone. Engine is waiting for structural shifts.")
+
+# ------------------------------------------------------------------------------
+# TAB 2: MASTER RADAR BOARD (HEATMAP)
+# ------------------------------------------------------------------------------
+with tabs[1]:
+    st.subheader("Global Asset Structure Radar")
+    st.caption("Complete structural mapping of every scanned asset relative to nearest Supply and Demand blocks.")
+    
+    if not radar_df.empty:
+        search_query = st.text_input("Filter Asset / Class:", placeholder="e.g. RELIANCE, Gold, COMMODITY...")
+        
+        radar_display = radar_df.copy()
+        radar_display['Asset'] = radar_display['Ticker'].map(lambda x: COMMODITY_MAP.get(x, x.replace('.NS', '')))
+        
+        filtered_radar = radar_display if not search_query else radar_display[
+            radar_display['Asset'].str.contains(search_query, case=False, na=False) |
+            radar_display['Asset_Class'].str.contains(search_query, case=False, na=False)
+        ]
+
+        for col in ['Live_Price', 'Nearest_Demand_OB', 'Nearest_Supply_OB']:
+            filtered_radar[col] = filtered_radar.apply(lambda row: format_price(row, col), axis=1)
+
+        def heatmap_distance(val):
+            if pd.isna(val): return ''
+            try:
+                v = float(val)
+                if abs(v) <= 1.5: return 'background-color: rgba(210, 153, 34, 0.4); color: #d29922; font-weight: bold;' 
+                elif v > 1.5 and v <= 5.0: return 'color: #8b949e;' 
+                else: return 'color: #484f58;' 
+            except:
+                return ''
+
+        def highlight_trend(val):
+            if val == 'BULLISH' or 'LONG' in str(val): return 'color: #2ea043; font-weight: bold;'
+            elif val == 'BEARISH' or 'SHORT' in str(val): return 'color: #f23645; font-weight: bold;'
+            return 'color: #8b949e;'
+
+        styled_radar = filtered_radar.style\
+            .map(highlight_trend, subset=['Trend'])\
+            .map(heatmap_distance, subset=['Demand_Dist_%', 'Supply_Dist_%'])
+        
+        st.dataframe(
+            styled_radar, 
+            use_container_width=True, 
+            height=500, 
+            hide_index=True,
+            column_order=["Asset", "Asset_Class", "Live_Price", "Trend", "Nearest_Demand_OB", "Demand_Dist_%", "Nearest_Supply_OB", "Supply_Dist_%"],
+            column_config={
+                "Asset": st.column_config.TextColumn("Asset", width="medium"),
+                "Live_Price": st.column_config.TextColumn("Price"),
+                "Nearest_Demand_OB": st.column_config.TextColumn("Nearest Demand"),
+                "Nearest_Supply_OB": st.column_config.TextColumn("Nearest Supply"),
+                "Demand_Dist_%": st.column_config.NumberColumn("Demand Dist. (Gold = Hot)", format="%.2f %%"),
+                "Supply_Dist_%": st.column_config.NumberColumn("Supply Dist. (Gold = Hot)", format="%.2f %%"),
+            }
+        )
+    else:
+        st.info("Radar feed not found in cloud cache. Wait for next automated backend scan.")
+
+# ------------------------------------------------------------------------------
+# TAB 3: INTERACTIVE CHART INSPECTOR
+# ------------------------------------------------------------------------------
+with tabs[2]:
+    st.subheader("Interactive Institutional Chart Inspector")
+    st.caption("Plotly visualization showing live Order Blocks (+OB/-OB), Dealing Range, and BOS breaks.")
+    
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1:
+        selected_ticker = st.selectbox("Search & Select Asset:", full_ticker_list, index=0)
+    with c2:
+        bars_count = st.slider("Lookback Bars:", min_value=60, max_value=350, value=180, step=20)
+    with c3:
+        chart_theme = st.selectbox("Theme:", ["dark", "light"], index=0)
+
+    if selected_ticker:
+        with st.spinner(f"Computing SMC structure for {selected_ticker}..."):
+            data = load_positional_data(selected_ticker, start_date="2022-01-01")
+            if data is not None and 'daily' in data and not data['daily'].empty and len(data['daily']) >= 50:
+                engine = SMCEngine(data['daily'], swing_length=3)
+                smc_df = engine.run_all()
+                tracker = SMCMitigationTracker(smc_df)
+                tracker.run_tracking()
+                
+                chart_engine = SMCChartEngine(smc_df, tracker, selected_ticker)
+                fig = chart_engine.render_chart(num_bars=bars_count, save_html=False, theme=chart_theme)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.error(f"Insufficient data to generate chart for {selected_ticker}.")
+
+# ------------------------------------------------------------------------------
+# TAB 4: STRATEGY BACKTEST AUDIT (DUAL CHARTS)
+# ------------------------------------------------------------------------------
+with tabs[3]:
+    st.subheader("Client Performance & Backtest Audit")
+    st.caption("Historical performance logic using dynamic ATR stops and walk-forward confirmation rules.")
+    
+    st.markdown("###### Audit Configuration")
+    bt_col1, bt_col2, bt_col3, bt_col4 = st.columns([2, 2, 2, 2])
+
+    with bt_col1: 
+        bt_ticker = st.selectbox("Target Asset:", full_ticker_list, index=0, key="bt_ticker")
+    with bt_col2: 
+        bt_start = st.selectbox("Historical Start:", ["2020-01-01", "2021-01-01", "2022-01-01"], index=0)
+    with bt_col3: 
+        bt_min_rr = st.number_input("Min R:R Threshold:", min_value=1.0, max_value=5.0, value=1.0, step=0.5)
+    with bt_col4: 
+        st.markdown("<br>", unsafe_allow_html=True)
+        run_bt = st.button("⚙️ Audit Historical Performance", use_container_width=True, type="primary")
+        
+    st.divider()
+    
+    if run_bt:
+        if ClientSMCBacktester is None:
+            st.error("Backtester module not found.")
+        else:
+            with st.spinner(f"Backtesting {bt_ticker} on daily timeframe..."):
+                tester = ClientSMCBacktester(
+                    ticker=bt_ticker, start_date=bt_start, min_rr=bt_min_rr,
+                    risk_per_trade_pct=0.01, initial_capital=100000.0
+                )
+                tester.run_backtest()
+                
+                if tester.trades:
+                    trades_df = pd.DataFrame(tester.trades)
+                    wins = len(trades_df[trades_df['pnl_r'] > 0])
+                    scratches = len(trades_df[trades_df['pnl_r'] == 0])
+                    total = len(trades_df)
+                    
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric("Total Trades", total)
+                    k2.metric("Trade Accuracy", f"{((wins + scratches) / total) * 100:.2f}%")
+                    
+                    tot_prof = trades_df[trades_df['pnl_cash'] > 0]['pnl_cash'].sum()
+                    tot_loss = abs(trades_df[trades_df['pnl_cash'] < 0]['pnl_cash'].sum())
+                    k3.metric("Profit Factor", f"{tot_prof / tot_loss if tot_loss > 0 else 0:.2f}")
+                    
+                    eq_df = pd.DataFrame(tester.equity_curve).set_index('Date')
+                    tot_ret = ((eq_df['Capital'].iloc[-1] - 100000.0) / 100000.0) * 100
+                    k4.metric("Net Portfolio Return", f"+{tot_ret:.2f}%")
+
+                    # VISUAL UPGRADE: Dual Charts (Equity & Drawdown)
+                    chart_col1, chart_col2 = st.columns(2)
+                    
+                    with chart_col1:
+                        st.markdown("**Cumulative Equity Curve**")
+                        fig_eq = go.Figure()
+                        fig_eq.add_trace(go.Scatter(x=eq_df.index, y=eq_df['Capital'], mode='lines', fill='tozeroy', line=dict(color='#1f6feb', width=2), fillcolor='rgba(31, 111, 235, 0.1)'))
+                        fig_eq.update_layout(template="plotly_dark", height=300, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                        st.plotly_chart(fig_eq, use_container_width=True)
+
+                    with chart_col2:
+                        st.markdown("**Historical Drawdown Profile**")
+                        eq_df['Peak'] = eq_df['Capital'].cummax()
+                        eq_df['Drawdown'] = (eq_df['Capital'] - eq_df['Peak']) / eq_df['Peak'] * 100
+                        fig_dd = go.Figure()
+                        fig_dd.add_trace(go.Scatter(x=eq_df.index, y=eq_df['Drawdown'], mode='lines', fill='tozeroy', line=dict(color='#f23645', width=1), fillcolor='rgba(242, 54, 69, 0.2)'))
+                        fig_dd.update_layout(template="plotly_dark", height=300, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(title="% Drawdown"))
+                        st.plotly_chart(fig_dd, use_container_width=True)
+
+                    st.markdown("#### Executed Trades Ledger")
+                    st.dataframe(trades_df[['signal_date', 'direction', 'entry_price', 'exit_price', 'pnl_r', 'capital_after']].tail(25), use_container_width=True, hide_index=True)
+                else:
+                    st.warning(f"No trades met the {bt_min_rr} R:R criteria for {bt_ticker} since {bt_start}.")
+    else:
+        st.info("Configure the backtest parameters above and click 'Audit Historical Performance' to begin.")
