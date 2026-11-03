@@ -7,7 +7,7 @@ from data_loader import load_positional_data
 from master_scanner import scan_single_ticker
 from universe import get_tickers_by_category
 
-WEBHOOK_URL = "YOUR_WEB_APP_URL_HERE"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyf-YG6oFtUE9Ot4O5MwHWVIoGWXLcsleCyOVrzSKtE8Wc0ookE64K3oOgtE1O1zxtJQw/exec"
 
 def push_to_sheets(records, sheet_name):
     print(f"Attempting to push {len(records)} records to {sheet_name}...")
