@@ -1,9 +1,25 @@
 import pandas as pd
 import concurrent.futures
 import os
+import requests
+import json
 from data_loader import load_positional_data
 from master_scanner import scan_single_ticker
 from universe import get_tickers_by_category
+
+# Paste your App Script Web app URL inside the quotes below:
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyf-YG6oFtUE9Ot4O5MwHWVIoGWXLcsleCyOVrzSKtE8Wc0ookE64K3oOgtE1O1zxtJQw/exec"
+
+def push_to_sheets(records, sheet_name):
+    if not records: 
+        return
+    df = pd.DataFrame(records)
+    payload = {"sheetName": sheet_name, "data": df.to_dict(orient="records")}
+    try:
+        response = requests.post(WEBHOOK_URL, data=json.dumps(payload))
+        print(f"Pushed {len(records)} records to {sheet_name} DB. Status: {response.text}")
+    except Exception as e:
+        print(f"Failed to push to Google Sheets: {e}")
 
 def run_enterprise_batch():
     print("Initiating Enterprise Multi-Threaded SMC Scan...")
@@ -36,13 +52,10 @@ def run_enterprise_batch():
             except Exception as e:
                 print(f"Error processing {future_to_ticker[future]}: {e}")
 
-    # Save outputs to the repository
-    if radar_records:
-        pd.DataFrame(radar_records).to_csv("SMC_MASTER_RADAR_FEED.csv", index=False)
-        print("Radar feed updated.")
-    if actionable_records:
-        pd.DataFrame(actionable_records).to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
-        print("Actionable alerts updated.")
+    # PUSH TO GOOGLE SHEETS INSTEAD OF CSV
+    print("Uploading data to Google Sheets Database...")
+    push_to_sheets(actionable_records, "Alerts")
+    push_to_sheets(radar_records, "Radar")
 
 if __name__ == "__main__":
     run_enterprise_batch()
