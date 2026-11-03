@@ -1,0 +1,32 @@
+name: Enterprise SMC Data Pipeline
+
+on:
+  schedule:
+    - cron: '0 */4 * * 1-5' # Runs every 4 hours, Monday through Friday
+  workflow_dispatch: # Allows you to click a "Run" button manually in GitHub
+
+jobs:
+  build_and_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install pandas numpy yfinance ta
+
+      - name: Execute Multi-Threaded Engine
+        run: python backend_scanner.py
+
+      - name: Commit and Push CSV Updates
+        run: |
+          git config --global user.name "SMC-Bot"
+          git config --global user.email "bot@alphaflow.com"
+          git add SMC_MASTER_RADAR_FEED.csv SMC_ACTIONABLE_ALERTS.csv
+          git commit -m "Auto-update SMC data feeds" || exit 0
+          git push
