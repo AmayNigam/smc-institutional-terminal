@@ -25,15 +25,13 @@ def push_to_sheets(records, sheet_name):
 def run_enterprise_batch():
     print("Initiating Enterprise Multi-Threaded SMC Scan...")
     
-    target_universe = []
-    try:
-        target_universe.extend([(t, "COMMODITY") for t in get_tickers_by_category("COMMODITIES")])
-        target_universe.extend([(t, "EQUITY_NIFTY50") for t in get_tickers_by_category("NIFTY_50")])
-    except Exception as e:
-        print(f"CRITICAL ERROR loading universe. Are the list files missing from GitHub? Error: {e}")
+  target_universe = [
+        ("RELIANCE.NS", "EQUITY_NIFTY50"),
+        ("TCS.NS", "EQUITY_NIFTY50"),
+        ("GC=F", "COMMODITY")
+    ]
         
     print(f"Target Universe Size: {len(target_universe)} tickers.")
-    
     if len(target_universe) == 0:
         print("Aborting scan: No tickers loaded.")
         return
