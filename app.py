@@ -95,17 +95,22 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ENTERPRISE DATA INGESTION (READ-ONLY CLOUD CACHE)
 # ==============================================================================
 @st.cache_data(ttl=3600) # Caches the data in RAM for 1 hour
+@st.cache_data(ttl=3600)
 def fetch_enterprise_data():
-    """Reads live market data directly from the Google Sheets Database."""
-    # Your specific Google Sheet ID
-    sheet_id = "1RkjGtc86xv_34CpHFcr_KpT9l1j-FkauOZJLI-RMj3I"
-    
-    radar_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Radar"
-    alerts_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Alerts"
+    """Reads pre-computed EOD data directly from the GitHub repository."""
+    radar_url = "https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_MASTER_RADAR_FEED.csv"
+    alerts_url = "https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_ACTIONABLE_ALERTS.csv"
     
     try:
         r_df = pd.read_csv(radar_url)
         a_df = pd.read_csv(alerts_url)
+        
+        # FAILSAFE: If the CSV has the old/wrong mock columns, force it to be an empty valid dataframe
+        if not a_df.empty and 'Direction' not in a_df.columns:
+            a_df = pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Direction', 'Live_Price', 'Entry', 'Stop_Loss', 'Target', 'R:R', 'OB_Date'])
+        if not r_df.empty and 'Trend' not in r_df.columns:
+            r_df = pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Live_Price', 'Trend', 'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%'])
+            
         return r_df, a_df
     except Exception:
         return pd.DataFrame(), pd.DataFrame()
