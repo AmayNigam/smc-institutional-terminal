@@ -1,22 +1,22 @@
-name: Daily Institutional SMC Scanner
+name: Enterprise SMC Data Pipeline
 
 on:
   schedule:
-    # Runs at 10:15 AM UTC every weekday (Monday-Friday). 
-    # This corresponds to 3:45 PM IST (just after the Indian market closes)
-    - cron: '15 10 * * 1-5'
-  workflow_dispatch: # This adds a button allowing you to run it manually anytime
+    - cron: '30 11 * * 1-5' # Runs Mon-Fri after market close
+  workflow_dispatch:
 
 jobs:
-  run-scanner:
+  build_and_scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write 
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
 
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v5
+    - name: Setup Python
+      uses: actions/setup-python@v4
       with:
         python-version: '3.10'
 
@@ -25,17 +25,13 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Execute Daily SMC Scanner & Telegram Dispatch
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        python daily_cron.py
+    - name: Execute Multi-Threaded Engine
+      run: python backend_scanner.py
 
-    - name: Commit and Push Updated CSV Feeds
+    - name: Commit Updated CSVs
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add SMC_ACTIONABLE_ALERTS.csv SMC_MASTER_RADAR_FEED.csv
-        # Only commit if there are new setups to update the dashboard
-        git diff-index --quiet HEAD || (git commit -m "Automated Market Close Update: SMC Feeds" && git push)
+        git config --global user.name 'SMC Bot'
+        git config --global user.email 'bot@alphaflow.com'
+        git add SMC_ACTIONABLE_ALERTS.csv SMC_MASTER_RADAR_FEED.csv || echo "No files to add"
+        git commit -m "Automated Market Scan Data Update" || echo "No changes to commit"
+        git push
