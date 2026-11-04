@@ -96,9 +96,12 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 @st.cache_data(ttl=3600) # Caches the data in RAM for 1 hour
 def fetch_enterprise_data():
-    """Reads pre-computed EOD data directly from the GitHub repository."""
-    radar_url = "https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_MASTER_RADAR_FEED.csv"
-    alerts_url = "https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_ACTIONABLE_ALERTS.csv"
+    """Reads live market data directly from the Google Sheets Database."""
+    # Your specific Google Sheet ID
+    sheet_id = "1RkjGtc86xv_34CpHFcr_KpT9l1j-FkauOZJLI-RMj3I"
+    
+    radar_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Radar"
+    alerts_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Alerts"
     
     try:
         r_df = pd.read_csv(radar_url)
