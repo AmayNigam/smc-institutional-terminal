@@ -50,7 +50,7 @@ def run_enterprise_batch():
         pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Direction', 'Live_Price', 'Entry', 'Stop_Loss', 'Target', 'R:R', 'OB_Date']).to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
         
     if radar_records:
-        pd.DataFrame(radar_records).tocsv("SMC_MASTER_RADAR_FEED.csv", index=False)
+        pd.DataFrame(radar_records).to_csv("SMC_MASTER_RADAR_FEED.csv", index=False)
 
     print("Data saved to CSVs successfully.")
 
