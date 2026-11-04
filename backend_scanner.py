@@ -1,40 +1,15 @@
 import pandas as pd
 import concurrent.futures
 import os
-import requests
-import json
 from data_loader import load_positional_data
 from master_scanner import scan_single_ticker
 from universe import get_tickers_by_category
 
-# Your live database webhook
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyf-YG6oFtUE9Ot4O5MwHWVIoGWXLcsleCyOVrzSKtE8Wc0ookE64K3oOgtE1O1zxtJQw/exec"
-
-def push_to_sheets(records, sheet_name):
-    print(f"Attempting to push {len(records)} records to {sheet_name}...")
-    if not records:
-        return
-    
-    # Break the massive payload into smaller chunks so Google Apps Script doesn't crash
-    chunk_size = 300 
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
-        df = pd.DataFrame(chunk)
-        payload = {"sheetName": sheet_name, "data": df.to_dict(orient="records")}
-        try:
-            # Add headers to ensure Google reads the JSON correctly
-            headers = {'Content-Type': 'application/json'}
-            response = requests.post(WEBHOOK_URL, data=json.dumps(payload), headers=headers)
-            print(f"Pushed batch {(i//chunk_size) + 1} to {sheet_name}. Status: {response.status_code}")
-        except Exception as e:
-            print(f"Failed to push batch to {sheet_name}: {e}")
-
 def run_enterprise_batch():
     print("Initiating Enterprise Multi-Threaded SMC Scan...")
-    
     target_universe = []
+    
     try:
-        # These now match universe.py exactly!
         target_universe.extend([(t, "COMMODITY") for t in get_tickers_by_category("COMMODITIES_GLOBAL")])
         target_universe.extend([(t, "EQUITY") for t in get_tickers_by_category("NSE_ALL")])
     except Exception as e:
@@ -42,18 +17,12 @@ def run_enterprise_batch():
         
     print(f"Target Universe Size: {len(target_universe)} tickers.")
     
-    # FAILSAFE: If it loads 0 tickers, print the files in the GitHub repo to see what's missing
     if len(target_universe) == 0:
-        print("--- DIRECTORY CHECK ---")
-        print(f"Current Path: {os.getcwd()}")
-        print(f"Files here: {os.listdir('.')}")
-        print("Aborting scan: No tickers loaded.")
         return
 
     radar_records = []
     actionable_records = []
     
-    # Run the multi-threaded scanner
     with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
         future_to_ticker = {}
         for ticker, asset_class in target_universe:
@@ -62,7 +31,7 @@ def run_enterprise_batch():
                 if data and 'daily' in data and not data['daily'].empty:
                     future = executor.submit(scan_single_ticker, ticker, asset_class, data['daily'], 0.05)
                     future_to_ticker[future] = ticker
-            except Exception as e:
+            except Exception:
                 pass
                 
         for future in concurrent.futures.as_completed(future_to_ticker):
@@ -70,13 +39,20 @@ def run_enterprise_batch():
                 radar_rec, actionable_recs = future.result()
                 if radar_rec: radar_records.append(radar_rec)
                 if actionable_recs: actionable_records.extend(actionable_recs)
-            except Exception as e:
-                print(f"Error processing {future_to_ticker[future]}: {e}")
+            except Exception:
+                pass
 
-    # Push real market data to Google Sheets
-    print("Uploading live data to Google Sheets Database...")
-    push_to_sheets(actionable_records, "Alerts")
-    push_to_sheets(radar_records, "Radar")
+    # Save directly to CSV
+    if actionable_records:
+        pd.DataFrame(actionable_records).to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
+    else:
+        # Create empty template if no trades
+        pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Direction', 'Live_Price', 'Entry', 'Stop_Loss', 'Target', 'R:R', 'OB_Date']).to_csv("SMC_ACTIONABLE_ALERTS.csv", index=False)
+        
+    if radar_records:
+        pd.DataFrame(radar_records).tocsv("SMC_MASTER_RADAR_FEED.csv", index=False)
+
+    print("Data saved to CSVs successfully.")
 
 if __name__ == "__main__":
     run_enterprise_batch()
