@@ -14,13 +14,20 @@ def push_to_sheets(records, sheet_name):
     print(f"Attempting to push {len(records)} records to {sheet_name}...")
     if not records:
         return
-    df = pd.DataFrame(records)
-    payload = {"sheetName": sheet_name, "data": df.to_dict(orient="records")}
-    try:
-        response = requests.post(WEBHOOK_URL, data=json.dumps(payload))
-        print(f"Google Sheets Response for {sheet_name}: {response.text}")
-    except Exception as e:
-        print(f"Failed to push to Google Sheets: {e}")
+    
+    # Break the massive payload into smaller chunks so Google Apps Script doesn't crash
+    chunk_size = 300 
+    for i in range(0, len(records), chunk_size):
+        chunk = records[i : i + chunk_size]
+        df = pd.DataFrame(chunk)
+        payload = {"sheetName": sheet_name, "data": df.to_dict(orient="records")}
+        try:
+            # Add headers to ensure Google reads the JSON correctly
+            headers = {'Content-Type': 'application/json'}
+            response = requests.post(WEBHOOK_URL, data=json.dumps(payload), headers=headers)
+            print(f"Pushed batch {(i//chunk_size) + 1} to {sheet_name}. Status: {response.status_code}")
+        except Exception as e:
+            print(f"Failed to push batch to {sheet_name}: {e}")
 
 def run_enterprise_batch():
     print("Initiating Enterprise Multi-Threaded SMC Scan...")
