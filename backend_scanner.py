@@ -27,9 +27,9 @@ def run_enterprise_batch():
     
     target_universe = []
     try:
-        # Loading your actual universe
-        target_universe.extend([(t, "COMMODITY") for t in get_tickers_by_category("COMMODITIES")])
-        target_universe.extend([(t, "EQUITY_NIFTY50") for t in get_tickers_by_category("NIFTY_50")])
+        # These now match universe.py exactly!
+        target_universe.extend([(t, "COMMODITY") for t in get_tickers_by_category("COMMODITIES_GLOBAL")])
+        target_universe.extend([(t, "EQUITY") for t in get_tickers_by_category("NSE_ALL")])
     except Exception as e:
         print(f"Error loading universe: {e}")
         
