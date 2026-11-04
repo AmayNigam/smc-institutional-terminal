@@ -96,6 +96,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 @st.cache_data(ttl=3600) # Caches the data in RAM for 1 hour
 @st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)
 def fetch_enterprise_data():
     """Reads pre-computed EOD data directly from the GitHub repository."""
     radar_url = "https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_MASTER_RADAR_FEED.csv"
@@ -110,6 +111,12 @@ def fetch_enterprise_data():
             a_df = pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Direction', 'Live_Price', 'Entry', 'Stop_Loss', 'Target', 'R:R', 'OB_Date'])
         if not r_df.empty and 'Trend' not in r_df.columns:
             r_df = pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Live_Price', 'Trend', 'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%'])
+            
+        # NEW: Sort to force COMMODITY to the top, then alphabetically by Ticker
+        if not a_df.empty:
+            a_df = a_df.sort_values(by=['Asset_Class', 'Ticker'], ascending=[True, True])
+        if not r_df.empty:
+            r_df = r_df.sort_values(by=['Asset_Class', 'Ticker'], ascending=[True, True])
             
         return r_df, a_df
     except Exception:
