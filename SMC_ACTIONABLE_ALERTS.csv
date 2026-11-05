@@ -1,3 +1,1 @@
 Ticker,Asset_Class,Direction,Live_Price,Entry,Stop_Loss,Target,R:R,OB_Date
-ARKADE.NS,EQUITY,🔴 SHORT (Sweep & Shift),111.26,115.47,145.26,55.88,2.0,2026-10-21
-NYKAA.NS,EQUITY,🟢 LONG (Sweep & Shift),346.3,334.5,309.19,385.13,2.0,2026-10-29
