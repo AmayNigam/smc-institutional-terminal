@@ -119,29 +119,68 @@ if "is_registered" not in st.session_state:
     st.session_state.is_registered = False
 
 # ==============================================================================
-# 3. ONBOARDING & REGISTRATION PAGE
+# 3. ONBOARDING & REGISTRATION PAGE (Premium SaaS Landing)
 # ==============================================================================
 def show_registration_page():
-    st.markdown("<h1 style='text-align: center; color: #58a6ff; margin-top: 50px;'>⚡ Welcome to Alpha Flow</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #8b949e; font-size: 1.2rem;'>Institutional Smart Money Concepts (SMC) Terminal</p><br><br>", unsafe_allow_html=True)
+    # Inject landing-page specific CSS
+    st.markdown("""
+        <style>
+            .hero-text { font-size: 3.5rem; font-weight: 800; color: #e6edf3; line-height: 1.1; margin-bottom: 20px;}
+            .highlight { color: #1f6feb; }
+            .feature-box { background: linear-gradient(145deg, #161b22, #0d1117); padding: 20px; border-radius: 12px; border: 1px solid #30363d; margin-bottom: 15px;}
+            .feature-title { color: #e6edf3; font-size: 1.1rem; font-weight: 600; margin-bottom: 5px; display: flex; align-items: center; gap: 10px;}
+            .feature-desc { color: #8b949e; font-size: 0.95rem; line-height: 1.4;}
+            .form-container { background: #0d1117; padding: 30px; border-radius: 16px; border: 1px solid #30363d; box-shadow: 0 10px 40px rgba(0,0,0,0.5);}
+        </style>
+    """, unsafe_allow_html=True)
     
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        st.info("**What does this tool do?**\n\nAlpha Flow is an automated quantitative engine. Every day after market close, it scans over 2,600+ assets on the National Stock Exchange (NSE) and global commodities. It uses institutional algorithms to detect Fair Value Gaps (FVGs), Order Blocks, and Liquidity Sweeps, filtering the noise to show you only the highest-probability strike zones.")
-        st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    
+    # Create an asymmetrical 2-column layout (Left: Pitch, Right: Form)
+    c1, spacer, c2 = st.columns([1.2, 0.1, 1])
+    
+    with c1:
+        st.markdown("<div class='hero-text'>Trade with <span class='highlight'>Institutional</span> Precision.</div>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 1.2rem; color: #8b949e; margin-bottom: 30px;'>Alpha Flow mathematically maps Fair Value Gaps and Order Blocks across 2,600+ equities and global commodities. Stop guessing. Start executing.</p>", unsafe_allow_html=True)
         
-        with st.form("registration_form"):
-            st.markdown("#### Request Terminal Access")
-            name = st.text_input("Full Name")
-            email = st.text_input("Professional Email Address")
+        st.markdown("""
+        <div class='feature-box'>
+            <div class='feature-title'>⚡ Fully Automated Daily Scans</div>
+            <div class='feature-desc'>The quantitative engine processes the entire NSE universe EOD, filtering out market noise.</div>
+        </div>
+        <div class='feature-box'>
+            <div class='feature-title'>🎯 Actionable Strike Zones</div>
+            <div class='feature-desc'>Strict R:R filtering and algorithmic liquidity sweep detection delivers only high-probability setups.</div>
+        </div>
+        <div class='feature-box'>
+            <div class='feature-title'>📊 Interactive SMC Charting</div>
+            <div class='feature-desc'>Visualize unmitigated +OB/-OB, dealing ranges, and structural shifts instantly on the dashboard.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with c2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div class='form-container'>", unsafe_allow_html=True)
+        with st.form("registration_form", clear_on_submit=False):
+            st.markdown("<h3 style='color: #e6edf3; margin-bottom: 5px;'>Request Terminal Access</h3>", unsafe_allow_html=True)
+            st.markdown("<p style='color: #8b949e; margin-bottom: 20px; font-size: 0.9rem;'>Enter your details to unlock the quantitative data lake.</p>", unsafe_allow_html=True)
+            
+            name = st.text_input("Full Name", placeholder="e.g. Amay Nigam")
+            email = st.text_input("Professional Email Address", placeholder="name@company.com")
+            experience = st.selectbox("Trading Experience", ["Beginner (< 1 yr)", "Intermediate (1-3 yrs)", "Institutional / Advanced"])
+            
+            st.markdown("<br>", unsafe_allow_html=True)
             submit = st.form_submit_button("Unlock Live Terminal", use_container_width=True, type="primary")
             
             if submit:
                 if name and email:
+                    # TODO: Integrate with a database or Google Sheets webhook to save user data
+                    st.success("Credentials accepted. Initializing Engine...")
                     st.session_state.is_registered = True
                     st.rerun()
                 else:
-                    st.error("Please provide both your name and email to access the quantitative data.")
+                    st.error("Missing credentials. Please provide both name and email.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 4. MAIN TERMINAL & NAVIGATION PANEL
