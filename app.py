@@ -37,15 +37,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# VIBRANT RETAIL UI: Forced Dark Mode & Neon Accents
+# VIBRANT RETAIL UI: Light Mode Compatible & Gamified Accents
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
-        
-        /* Force Dark App Background */
-        .stApp { background-color: #090c10; color: #e6edf3; }
         
         /* Vibrant Gradient Typography */
         .neon-title {
@@ -58,25 +55,25 @@ st.markdown("""
             margin-bottom: 10px;
         }
         
-        /* Custom Metric Cards */
+        /* Custom Metric Cards - Light/Adaptive */
         div[data-testid="metric-container"] {
-            background: linear-gradient(145deg, #161b22, #0d1117);
-            border: 1px solid #30363d;
+            border: 2px solid #e1e4e8;
+            background-color: transparent;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
             text-align: center;
         }
-        div[data-testid="metric-container"] label { color: #8b949e !important; font-size: 1.1rem !important; font-weight: 600 !important; }
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #58a6ff !important; font-size: 2.5rem !important; font-weight: 800 !important; }
+        div[data-testid="metric-container"] label { font-size: 1.1rem !important; font-weight: 600 !important; }
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #1f6feb !important; font-size: 2.5rem !important; font-weight: 800 !important; }
 
         /* Form Customization */
         div[data-testid="stForm"] {
-            background: #0d1117;
             border: 2px solid #1f6feb;
             border-radius: 16px;
             padding: 25px;
-            box-shadow: 0 0 20px rgba(31, 111, 235, 0.2);
+            box-shadow: 0 8px 24px rgba(31, 111, 235, 0.15);
+            background-color: transparent;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -84,7 +81,7 @@ st.markdown("""
 # ==============================================================================
 # 1. ENTERPRISE DATA INGESTION (With CDN Cache-Busting)
 # ==============================================================================
-@st.cache_data(ttl=300) # Reduced to 5 minutes for highly active data
+@st.cache_data(ttl=300) # 5-minute cache for highly active data
 def fetch_enterprise_data():
     """Reads EOD data directly from GitHub, bypassing CDN cache with a timestamp."""
     cb = int(time.time()) # Cache-buster
@@ -126,7 +123,7 @@ def show_registration_page():
     
     with c1:
         st.markdown("<div class='neon-title'>Trade with Institutional Precision.</div>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size: 1.3rem; color: #8b949e; margin-bottom: 30px;'>Alpha Flow mathematically maps Fair Value Gaps and Order Blocks across 2,600+ equities and global commodities. <b>Stop guessing. Start executing.</b></p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 1.3rem; margin-bottom: 30px; color: gray;'>Alpha Flow mathematically maps Fair Value Gaps and Order Blocks across 2,600+ equities and global commodities. <b>Stop guessing. Start executing.</b></p>", unsafe_allow_html=True)
         
         st.success("⚡ **Fully Automated Daily Scans:** The quantitative engine processes the entire NSE universe EOD.")
         st.info("🎯 **Actionable Strike Zones:** Algorithmic liquidity sweep detection delivers only high-probability setups.")
@@ -135,8 +132,8 @@ def show_registration_page():
     with c2:
         st.markdown("<br>", unsafe_allow_html=True)
         with st.form("registration_form", clear_on_submit=False):
-            st.markdown("<h3 style='margin-bottom: 5px; color: #58a6ff;'>🚀 Request Terminal Access</h3>", unsafe_allow_html=True)
-            st.markdown("<p style='margin-bottom: 20px; font-size: 0.95rem; color: #8b949e;'>Enter your details to unlock the quantitative data lake.</p>", unsafe_allow_html=True)
+            st.markdown("<h3 style='margin-bottom: 5px; color: #1f6feb;'>🚀 Request Terminal Access</h3>", unsafe_allow_html=True)
+            st.markdown("<p style='margin-bottom: 20px; font-size: 0.95rem; color: gray;'>Enter your details to unlock the quantitative data lake.</p>", unsafe_allow_html=True)
             
             name = st.text_input("Full Name", placeholder="e.g. Amay Nigam")
             email = st.text_input("Email Address", placeholder="name@company.com")
@@ -157,7 +154,7 @@ def show_registration_page():
 # 4. MAIN TERMINAL & NAVIGATION PANEL
 # ==============================================================================
 def show_main_terminal():
-    st.sidebar.markdown("<h2 style='color: #58a6ff;'>⚡ Alpha Flow</h2>", unsafe_allow_html=True)
+    st.sidebar.markdown("<h2 style='color: #1f6feb;'>⚡ Alpha Flow</h2>", unsafe_allow_html=True)
     st.sidebar.caption("SMC Terminal v1.1 | Data Synced")
     st.sidebar.divider()
     
@@ -192,7 +189,7 @@ def show_main_terminal():
 
     if nav_choice == "Live Market Dashboard":
         st.markdown("<h1 style='text-align: center; color: #b359f8;'>⚡ Alpha Flow Quantitative Terminal</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #8b949e; font-size: 1.2rem;'>Institutional Smart Money Concepts (SMC) State-Machine Engine | <span style='color: #2ea043;'>🟢 Live Market Data</span></p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; font-size: 1.2rem; color: gray;'>Institutional Smart Money Concepts (SMC) State-Machine Engine | <span style='color: #2ea043; font-weight: bold;'>🟢 Live Market Data</span></p>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
         radar_df, alerts_df = fetch_enterprise_data()
@@ -219,22 +216,21 @@ def show_main_terminal():
 
         with c2:
             bias_score = (hud_longs / hud_total * 100) if hud_total > 0 else 50
+            # Stripped hardcoded dark mode colors from the gauge chart
             fig_gauge = go.Figure(go.Indicator(
                 mode = "gauge+number",
                 value = bias_score,
                 domain = {'x': [0, 1], 'y': [0, 1]},
-                title = {'text': "Market Liquidity Bias", 'font': {'size': 18, 'color': '#8b949e'}},
-                number = {'suffix': "% Long", 'font': {'color': '#e6edf3'}},
+                title = {'text': "Market Liquidity Bias", 'font': {'size': 18}},
+                number = {'suffix': "% Long"},
                 gauge = {
-                    'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#30363d"},
-                    'bar': {'color': "rgba(255,255,255,0.3)", 'thickness': 0.2},
-                    'bgcolor': "#0b0f19",
+                    'axis': {'range': [0, 100], 'tickwidth': 1},
+                    'bar': {'color': "rgba(31, 111, 235, 0.4)", 'thickness': 0.2},
                     'borderwidth': 2,
-                    'bordercolor': "#30363d",
                     'steps': [
-                        {'range': [0, 45], 'color': "rgba(242, 54, 69, 0.8)"},
-                        {'range': [45, 55], 'color': "rgba(139, 148, 158, 0.4)"},
-                        {'range': [55, 100], 'color': "rgba(46, 160, 67, 0.8)"}
+                        {'range': [0, 45], 'color': "rgba(242, 54, 69, 0.6)"},
+                        {'range': [45, 55], 'color': "rgba(200, 200, 200, 0.4)"},
+                        {'range': [55, 100], 'color': "rgba(46, 160, 67, 0.6)"}
                     ]
                 }
             ))
@@ -322,16 +318,16 @@ def show_main_terminal():
                     if pd.isna(val) or val == 'None' or str(val).strip() == '': return ''
                     try:
                         v = float(val)
-                        if abs(v) <= 1.5: return 'background-color: rgba(210, 153, 34, 0.4); color: #d29922; font-weight: bold;' 
-                        elif v > 1.5 and v <= 5.0: return 'color: #8b949e;' 
-                        else: return 'color: #484f58;' 
+                        if abs(v) <= 1.5: return 'background-color: rgba(210, 153, 34, 0.4); font-weight: bold;' 
+                        elif v > 1.5 and v <= 5.0: return 'color: gray;' 
+                        else: return 'color: #a8a8a8;' 
                     except:
                         return ''
 
                 def highlight_trend(val):
                     if val == 'BULLISH' or 'LONG' in str(val): return 'color: #2ea043; font-weight: bold;'
                     elif val == 'BEARISH' or 'SHORT' in str(val): return 'color: #f23645; font-weight: bold;'
-                    return 'color: #8b949e;'
+                    return 'color: gray;'
 
                 styled_radar = filtered_radar.style\
                     .map(highlight_trend, subset=['Trend'])\
@@ -359,7 +355,7 @@ def show_main_terminal():
             c1, c2, c3 = st.columns([2, 1, 1])
             with c1: selected_ticker = st.selectbox("Search & Select Asset:", full_ticker_list, index=0)
             with c2: bars_count = st.slider("Lookback Bars:", min_value=60, max_value=350, value=180, step=20)
-            with c3: chart_theme = st.selectbox("Theme:", ["dark", "light"], index=0)
+            with c3: chart_theme = st.selectbox("Theme:", ["light", "dark"], index=0)
 
             if selected_ticker:
                 with st.spinner(f"Computing SMC structure for {selected_ticker}..."):
@@ -427,7 +423,7 @@ def show_main_terminal():
                                 st.markdown("**Cumulative Equity Curve**")
                                 fig_eq = go.Figure()
                                 fig_eq.add_trace(go.Scatter(x=eq_df.index, y=eq_df['Capital'], mode='lines', fill='tozeroy', line=dict(color='#1f6feb', width=2), fillcolor='rgba(31, 111, 235, 0.1)'))
-                                fig_eq.update_layout(template="plotly_dark", height=300, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                                fig_eq.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                                 st.plotly_chart(fig_eq, use_container_width=True)
 
                             with chart_col2:
@@ -436,7 +432,7 @@ def show_main_terminal():
                                 eq_df['Drawdown'] = (eq_df['Capital'] - eq_df['Peak']) / eq_df['Peak'] * 100
                                 fig_dd = go.Figure()
                                 fig_dd.add_trace(go.Scatter(x=eq_df.index, y=eq_df['Drawdown'], mode='lines', fill='tozeroy', line=dict(color='#f23645', width=1), fillcolor='rgba(242, 54, 69, 0.2)'))
-                                fig_dd.update_layout(template="plotly_dark", height=300, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(title="% Drawdown"))
+                                fig_dd.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(title="% Drawdown"))
                                 st.plotly_chart(fig_dd, use_container_width=True)
 
                             st.markdown("#### Executed Trades Ledger")
