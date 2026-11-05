@@ -81,10 +81,9 @@ st.markdown("""
 # ==============================================================================
 # 1. ENTERPRISE DATA INGESTION (With CDN Cache-Busting)
 # ==============================================================================
-@st.cache_data(ttl=300) # 5-minute cache for highly active data
+@st.cache_data(ttl=300) 
 def fetch_enterprise_data():
-    """Reads EOD data directly from GitHub, bypassing CDN cache with a timestamp."""
-    cb = int(time.time()) # Cache-buster
+    cb = int(time.time()) 
     radar_url = f"https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_MASTER_RADAR_FEED.csv?v={cb}"
     alerts_url = f"https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_ACTIONABLE_ALERTS.csv?v={cb}"
     
@@ -108,13 +107,13 @@ def fetch_enterprise_data():
                pd.DataFrame(columns=['Ticker', 'Asset_Class', 'Live_Price', 'Trend', 'Nearest_Demand_OB', 'Demand_Dist_%', 'Nearest_Supply_OB', 'Supply_Dist_%'])
 
 # ==============================================================================
-# 2. INITIALIZE SESSION STATE (The Gatekeeper)
+# 2. INITIALIZE SESSION STATE
 # ==============================================================================
 if "is_registered" not in st.session_state:
     st.session_state.is_registered = False
 
 # ==============================================================================
-# 3. ONBOARDING & REGISTRATION PAGE (Vibrant SaaS Layout)
+# 3. ONBOARDING & REGISTRATION PAGE
 # ==============================================================================
 def show_registration_page():
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -155,7 +154,7 @@ def show_registration_page():
 # ==============================================================================
 def show_main_terminal():
     st.sidebar.markdown("<h2 style='color: #1f6feb;'>⚡ Alpha Flow</h2>", unsafe_allow_html=True)
-    st.sidebar.caption("SMC Terminal v1.1 | Data Synced")
+    st.sidebar.caption("SMC Terminal v1.2 | Full Universe")
     st.sidebar.divider()
     
     nav_choice = st.sidebar.radio("Navigation Menu", ["Live Market Dashboard", "📖 How to Trade Setups"], index=0)
@@ -183,7 +182,6 @@ def show_main_terminal():
         
         **3. Risk Management Engine**
         * Never risk more than 1% of your total equity on a single strike.
-        * Ensure the R:R (Risk/Reward) profile on the dashboard is at least 1:2.0 before placing orders.
         """)
         return 
 
@@ -203,10 +201,19 @@ def show_main_terminal():
         else:
             hud_rr = 0.0
 
-        if not radar_df.empty:
-            full_ticker_list = sorted([str(t) for t in radar_df["Ticker"].dropna().unique() if str(t).strip()])
-        else:
-            full_ticker_list = ["RELIANCE.NS", "HDFCBANK.NS", "TRUALT.NS"]
+        # FIX: Force load all 2600+ tickers from the universe file to ensure no charts are missing
+        try:
+            all_tickers = []
+            for k, v in ASSET_UNIVERSES.items():
+                all_tickers.extend(v)
+            if not radar_df.empty:
+                all_tickers.extend(radar_df["Ticker"].dropna().tolist())
+            full_ticker_list = sorted(list(set([str(t) for t in all_tickers if str(t).strip()])))
+        except Exception:
+            if not radar_df.empty:
+                full_ticker_list = sorted([str(t) for t in radar_df["Ticker"].dropna().unique() if str(t).strip()])
+            else:
+                full_ticker_list = ["RELIANCE.NS", "HDFCBANK.NS", "TRUALT.NS"]
 
         c1, c2, c3 = st.columns([1, 2, 1])
 
@@ -216,21 +223,23 @@ def show_main_terminal():
 
         with c2:
             bias_score = (hud_longs / hud_total * 100) if hud_total > 0 else 50
-            # Stripped hardcoded dark mode colors from the gauge chart
+            # FIX: Restored vibrant gauge styling
             fig_gauge = go.Figure(go.Indicator(
                 mode = "gauge+number",
                 value = bias_score,
                 domain = {'x': [0, 1], 'y': [0, 1]},
-                title = {'text': "Market Liquidity Bias", 'font': {'size': 18}},
-                number = {'suffix': "% Long"},
+                title = {'text': "Market Liquidity Bias", 'font': {'size': 18, 'color': '#8b949e'}},
+                number = {'suffix': "% Long", 'font': {'color': '#1f6feb'}},
                 gauge = {
-                    'axis': {'range': [0, 100], 'tickwidth': 1},
-                    'bar': {'color': "rgba(31, 111, 235, 0.4)", 'thickness': 0.2},
+                    'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#e1e4e8"},
+                    'bar': {'color': "rgba(31, 111, 235, 0.9)", 'thickness': 0.3},
+                    'bgcolor': "transparent",
                     'borderwidth': 2,
+                    'bordercolor': "#e1e4e8",
                     'steps': [
-                        {'range': [0, 45], 'color': "rgba(242, 54, 69, 0.6)"},
-                        {'range': [45, 55], 'color': "rgba(200, 200, 200, 0.4)"},
-                        {'range': [55, 100], 'color': "rgba(46, 160, 67, 0.6)"}
+                        {'range': [0, 45], 'color': "rgba(242, 54, 69, 0.8)"},
+                        {'range': [45, 55], 'color': "rgba(139, 148, 158, 0.4)"},
+                        {'range': [55, 100], 'color': "rgba(46, 160, 67, 0.8)"}
                     ]
                 }
             ))
@@ -314,11 +323,12 @@ def show_main_terminal():
                     if col in filtered_radar.columns:
                         filtered_radar[col] = filtered_radar.apply(lambda row: format_price(row, col), axis=1)
 
+                # FIX: Restored Gold Highlight Vibe
                 def heatmap_distance(val):
                     if pd.isna(val) or val == 'None' or str(val).strip() == '': return ''
                     try:
                         v = float(val)
-                        if abs(v) <= 1.5: return 'background-color: rgba(210, 153, 34, 0.4); font-weight: bold;' 
+                        if abs(v) <= 1.5: return 'background-color: rgba(210, 153, 34, 0.35); color: #b8860b; font-weight: bold;' 
                         elif v > 1.5 and v <= 5.0: return 'color: gray;' 
                         else: return 'color: #a8a8a8;' 
                     except:
