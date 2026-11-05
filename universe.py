@@ -1,56 +1,60 @@
 import pandas as pd
-import urllib.request
+import requests
 import io
 
-# Central asset registry for Indian Equities and Commodities.
-ASSET_UNIVERSES = {
-    "COMMODITIES_GLOBAL": [
-        "GC=F",      # COMEX Gold Continuous Futures
-        "SI=F",      # COMEX Silver Continuous Futures
-        "CL=F",      # WTI Crude Oil Continuous Futures
-        "BZ=F",      # Brent Crude Oil Continuous Futures
-        "HG=F",      # Copper Continuous Futures
-        "NG=F",      # Natural Gas Continuous Futures
-    ],
+def get_dynamic_nse_universe():
+    """
+    Dynamically fetches the live master list of all active equities directly from the NSE servers.
+    Bypasses static hardcoding to ensure zero missing assets.
+    """
+    url = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
     
-    "COMMODITIES_DOMESTIC_INR": [
-        "SILVERBEES.NS",  # Nippon India Silver ETF
-        "GOLDBEES.NS",    # Nippon India Gold ETF 
-    ],
+    # Spoof a legitimate browser to bypass NSE firewall blocking GitHub Actions
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5"
+    }
     
-    "NIFTY_50_CORE": [
-        "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", 
-        "INFY.NS", "LT.NS", "SBIN.NS", "BHARTIARTL.NS", "ITC.NS"
-    ]
-}
-
-def get_all_nse_tickers() -> list:
-    """Dynamically fetches all ~2,200+ listed NSE tickers directly from the NSE India registry."""
     try:
-        url = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
-        # Mimic a browser so the NSE server doesn't block the request
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            csv_data = response.read().decode('utf-8')
-            
-        df = pd.read_csv(io.StringIO(csv_data))
-        # Filter out ETFs and mutual funds if necessary, or just keep all 'EQ' series
-        if 'SERIES' in df.columns:
-            df = df[df['SERIES'] == 'EQ']
+        # Establish a session to grab NSE cookies
+        session = requests.Session()
+        session.get("https://www.nseindia.com", headers=headers, timeout=10)
+        
+        # Fetch the live CSV from the archives
+        response = session.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # Parse the data and isolate the 'EQ' (pure equity) series
+        df = pd.read_csv(io.StringIO(response.text))
+        if ' SERIES' in df.columns:
+            df = df[df[' SERIES'].str.strip() == 'EQ']
             
         # Append .NS for Yahoo Finance compatibility
-        tickers = [str(sym) + ".NS" for sym in df['SYMBOL']]
-        print(f"[+] Successfully loaded {len(tickers)} live equities from NSE registry.")
-        return tickers
-    except Exception as e:
-        print(f"[!] Could not fetch live NSE list from server: {e}")
-        print("[!] Falling back to Nifty 50 Core.")
-        return ASSET_UNIVERSES["NIFTY_50_CORE"]
-
-def get_tickers_by_category(category: str) -> list:
-    """Returns list of tickers for a given category name."""
-    if category == "NSE_ALL":
-        print("[*] Fetching the master list of ALL listed NSE stocks...")
-        return get_all_nse_tickers()
+        live_tickers = (df['SYMBOL'].str.strip() + '.NS').tolist()
         
+        return {
+            "NSE_ALL_EQUITY": live_tickers,
+            "GLOBAL_COMMODITIES": ["GC=F", "SI=F", "CL=F", "BZ=F", "HG=F", "NG=F", "PA=F", "PL=F"]
+        }
+        
+    except Exception as e:
+        print(f"⚠️ NSE Dynamic Fetch Failed: {e}. Falling back to static emergency list.")
+        # FAILSAFE: Hardcoded fallback just in case the NSE website goes down during a scan
+        return {
+            "NSE_FALLBACK": [
+                "RELIANCE.NS", "HDFCBANK.NS", "TCS.NS", "INFY.NS", "ICICIBANK.NS", 
+                "MOREPENLAB.NS", "OMAXAUTO.NS", "SUNTV.NS", "UJJIVANSFB.NS",
+                "NUVOCO.NS", "TORNTPOWER.NS", "VENKEYS.NS", "ABBOTINDIA.NS"
+            ],
+            "GLOBAL_COMMODITIES": ["GC=F", "SI=F", "CL=F", "BZ=F", "HG=F", "NG=F", "PA=F", "PL=F"]
+        }
+
+# Execute fetch immediately so ASSET_UNIVERSES is populated dynamically when imported by app.py or scanner.py
+ASSET_UNIVERSES = get_dynamic_nse_universe()
+
+def get_tickers_by_category(category):
+    # Returns the list based on the requested category. If it fails, checks for the fallback.
+    if category == "NSE_ALL_EQUITY" and "NSE_ALL_EQUITY" not in ASSET_UNIVERSES:
+        return ASSET_UNIVERSES.get("NSE_FALLBACK", [])
     return ASSET_UNIVERSES.get(category, [])
