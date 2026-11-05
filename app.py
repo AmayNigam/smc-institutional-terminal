@@ -160,10 +160,10 @@ def show_registration_page():
         
     with c2:
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<div class='form-container'>", unsafe_allow_html=True)
+        # The raw HTML div wrapper has been removed so the form renders properly
         with st.form("registration_form", clear_on_submit=False):
-            st.markdown("<h3 style='color: #e6edf3; margin-bottom: 5px;'>Request Terminal Access</h3>", unsafe_allow_html=True)
-            st.markdown("<p style='color: #8b949e; margin-bottom: 20px; font-size: 0.9rem;'>Enter your details to unlock the quantitative data lake.</p>", unsafe_allow_html=True)
+            st.markdown("<h3 style='margin-bottom: 5px;'>Request Terminal Access</h3>", unsafe_allow_html=True)
+            st.markdown("<p style='margin-bottom: 20px; font-size: 0.9rem;'>Enter your details to unlock the quantitative data lake.</p>", unsafe_allow_html=True)
             
             name = st.text_input("Full Name", placeholder="e.g. Amay Nigam")
             email = st.text_input("Professional Email Address", placeholder="name@company.com")
@@ -174,7 +174,6 @@ def show_registration_page():
             
             if submit:
                 if name and email:
-                    # TODO: Integrate with a database or Google Sheets webhook to save user data
                     st.success("Credentials accepted. Initializing Engine...")
                     st.session_state.is_registered = True
                     st.rerun()
