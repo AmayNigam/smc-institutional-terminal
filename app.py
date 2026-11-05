@@ -233,7 +233,7 @@ def show_main_terminal():
                 gauge = {
                     'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#e1e4e8"},
                     'bar': {'color': "rgba(31, 111, 235, 0.9)", 'thickness': 0.3},
-                    'bgcolor': "transparent",
+                    'bgcolor': "rgba(0,0,0,0)",
                     'borderwidth': 2,
                     'bordercolor': "#e1e4e8",
                     'steps': [
