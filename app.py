@@ -4,6 +4,7 @@ import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
 import os
+import time
 
 # Ensure current working directory is in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -27,7 +28,7 @@ except ImportError:
             ClientSMCBacktester = None
 
 # ==============================================================================
-# STREAMLIT PAGE CONFIGURATION & HIGH-END CSS
+# STREAMLIT PAGE CONFIGURATION
 # ==============================================================================
 st.set_page_config(
     page_title="Alpha Flow | SMC Terminal",
@@ -36,69 +37,59 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling for Premium Institutional Dark Mode
+# VIBRANT RETAIL UI: Forced Dark Mode & Neon Accents
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         
-        .main {background-color: #0b0f19;}
+        /* Force Dark App Background */
+        .stApp { background-color: #090c10; color: #e6edf3; }
         
+        /* Vibrant Gradient Typography */
+        .neon-title {
+            background: -webkit-linear-gradient(45deg, #1f6feb, #b359f8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 3.8rem;
+            font-weight: 900;
+            line-height: 1.1;
+            margin-bottom: 10px;
+        }
+        
+        /* Custom Metric Cards */
         div[data-testid="metric-container"] {
             background: linear-gradient(145deg, #161b22, #0d1117);
             border: 1px solid #30363d;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
             text-align: center;
         }
-        
-        div[data-testid="metric-container"] label {
-            color: #8b949e !important;
-            font-size: 1.1rem !important;
-            font-weight: 600 !important;
-            letter-spacing: 0.5px;
-        }
-        
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-            color: #e6edf3 !important;
-            font-size: 2.5rem !important;
-            font-weight: 700 !important;
-        }
+        div[data-testid="metric-container"] label { color: #8b949e !important; font-size: 1.1rem !important; font-weight: 600 !important; }
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #58a6ff !important; font-size: 2.5rem !important; font-weight: 800 !important; }
 
-        .stTabs [data-baseweb="tab-list"] {gap: 12px;}
-        .stTabs [data-baseweb="tab"] {
-            background-color: #161b22;
-            border-radius: 8px 8px 0px 0px;
-            padding: 10px 24px;
-            border: 1px solid #30363d;
-            border-bottom: none;
-            color: #8b949e;
-            font-weight: 600;
+        /* Form Customization */
+        div[data-testid="stForm"] {
+            background: #0d1117;
+            border: 2px solid #1f6feb;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 0 20px rgba(31, 111, 235, 0.2);
         }
-        .stTabs [aria-selected="true"] {
-            background-color: #1f6feb !important;
-            color: #ffffff !important;
-        }
-        
-        /* Registration Page Custom CSS */
-        .hero-text { font-size: 3.5rem; font-weight: 800; color: #e6edf3; line-height: 1.1; margin-bottom: 20px;}
-        .highlight { color: #1f6feb; }
-        .feature-box { background: linear-gradient(145deg, #161b22, #0d1117); padding: 20px; border-radius: 12px; border: 1px solid #30363d; margin-bottom: 15px;}
-        .feature-title { color: #e6edf3; font-size: 1.1rem; font-weight: 600; margin-bottom: 5px; display: flex; align-items: center; gap: 10px;}
-        .feature-desc { color: #8b949e; font-size: 0.95rem; line-height: 1.4;}
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. ENTERPRISE DATA INGESTION 
+# 1. ENTERPRISE DATA INGESTION (With CDN Cache-Busting)
 # ==============================================================================
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=300) # Reduced to 5 minutes for highly active data
 def fetch_enterprise_data():
-    """Reads pre-computed EOD data directly from the GitHub repository."""
-    radar_url = "https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_MASTER_RADAR_FEED.csv"
-    alerts_url = "https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_ACTIONABLE_ALERTS.csv"
+    """Reads EOD data directly from GitHub, bypassing CDN cache with a timestamp."""
+    cb = int(time.time()) # Cache-buster
+    radar_url = f"https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_MASTER_RADAR_FEED.csv?v={cb}"
+    alerts_url = f"https://raw.githubusercontent.com/AmayNigam/smc-institutional-terminal/main/SMC_ACTIONABLE_ALERTS.csv?v={cb}"
     
     try:
         r_df = pd.read_csv(radar_url)
@@ -134,37 +125,25 @@ def show_registration_page():
     c1, spacer, c2 = st.columns([1.2, 0.1, 1])
     
     with c1:
-        st.markdown("<div class='hero-text'>Trade with <span class='highlight'>Institutional</span> Precision.</div>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size: 1.2rem; color: #8b949e; margin-bottom: 30px;'>Alpha Flow mathematically maps Fair Value Gaps and Order Blocks across 2,600+ equities and global commodities. Stop guessing. Start executing.</p>", unsafe_allow_html=True)
+        st.markdown("<div class='neon-title'>Trade with Institutional Precision.</div>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 1.3rem; color: #8b949e; margin-bottom: 30px;'>Alpha Flow mathematically maps Fair Value Gaps and Order Blocks across 2,600+ equities and global commodities. <b>Stop guessing. Start executing.</b></p>", unsafe_allow_html=True)
         
-        st.markdown("""
-        <div class='feature-box'>
-            <div class='feature-title'>⚡ Fully Automated Daily Scans</div>
-            <div class='feature-desc'>The quantitative engine processes the entire NSE universe EOD, filtering out market noise.</div>
-        </div>
-        <div class='feature-box'>
-            <div class='feature-title'>🎯 Actionable Strike Zones</div>
-            <div class='feature-desc'>Strict R:R filtering and algorithmic liquidity sweep detection delivers only high-probability setups.</div>
-        </div>
-        <div class='feature-box'>
-            <div class='feature-title'>📊 Interactive SMC Charting</div>
-            <div class='feature-desc'>Visualize unmitigated +OB/-OB, dealing ranges, and structural shifts instantly on the dashboard.</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.success("⚡ **Fully Automated Daily Scans:** The quantitative engine processes the entire NSE universe EOD.")
+        st.info("🎯 **Actionable Strike Zones:** Algorithmic liquidity sweep detection delivers only high-probability setups.")
+        st.warning("📊 **Interactive SMC Charting:** Visualize unmitigated +OB/-OB and structural shifts instantly.")
         
     with c2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        # Form block stripped of broken HTML wrappers to fix the "Black Block" bug
+        st.markdown("<br>", unsafe_allow_html=True)
         with st.form("registration_form", clear_on_submit=False):
-            st.markdown("<h3 style='margin-bottom: 5px; color: #e6edf3;'>Request Terminal Access</h3>", unsafe_allow_html=True)
-            st.markdown("<p style='margin-bottom: 20px; font-size: 0.9rem; color: #8b949e;'>Enter your details to unlock the quantitative data lake.</p>", unsafe_allow_html=True)
+            st.markdown("<h3 style='margin-bottom: 5px; color: #58a6ff;'>🚀 Request Terminal Access</h3>", unsafe_allow_html=True)
+            st.markdown("<p style='margin-bottom: 20px; font-size: 0.95rem; color: #8b949e;'>Enter your details to unlock the quantitative data lake.</p>", unsafe_allow_html=True)
             
             name = st.text_input("Full Name", placeholder="e.g. Amay Nigam")
-            email = st.text_input("Professional Email Address", placeholder="name@company.com")
+            email = st.text_input("Email Address", placeholder="name@company.com")
             experience = st.selectbox("Trading Experience", ["Beginner (< 1 yr)", "Intermediate (1-3 yrs)", "Institutional / Advanced"])
             
             st.markdown("<br>", unsafe_allow_html=True)
-            submit = st.form_submit_button("Unlock Live Terminal", use_container_width=True, type="primary")
+            submit = st.form_submit_button("Unlock Live Terminal ⚡", use_container_width=True, type="primary")
             
             if submit:
                 if name and email:
@@ -179,11 +158,15 @@ def show_registration_page():
 # ==============================================================================
 def show_main_terminal():
     st.sidebar.markdown("<h2 style='color: #58a6ff;'>⚡ Alpha Flow</h2>", unsafe_allow_html=True)
-    st.sidebar.caption("SMC Terminal v1.0")
+    st.sidebar.caption("SMC Terminal v1.1 | Data Synced")
     st.sidebar.divider()
     
     nav_choice = st.sidebar.radio("Navigation Menu", ["Live Market Dashboard", "📖 How to Trade Setups"], index=0)
     
+    if st.sidebar.button("🔄 Force Data Refresh", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+        
     st.sidebar.divider()
     st.sidebar.success(f"🟢 Connected to GitHub Data Lake")
     
@@ -193,23 +176,22 @@ def show_main_terminal():
         ### Institutional SMC Execution Guide
         
         **1. Check the Actionable Strikes Tab**
-        * Assets listed here have triggered a structural reversal within a confirmed institutional supply/demand block. 
+        * Assets listed here have triggered a structural reversal within a confirmed institutional block. 
         * Do not execute blindly. This is a watchlist of high-probability zones.
         
         **2. Verify the Structure (Chart Inspector)**
         * Navigate to the 'Interactive Chart Inspector' tab.
         * Search for the triggered asset.
-        * Ensure the price has swept liquidity and created a valid Fair Value Gap (FVG) in your intended direction.
+        * Ensure the price has swept liquidity and created a valid Fair Value Gap (FVG).
         
         **3. Risk Management Engine**
         * Never risk more than 1% of your total equity on a single strike.
         * Ensure the R:R (Risk/Reward) profile on the dashboard is at least 1:2.0 before placing orders.
-        * Stop losses must be placed strictly behind the originating Order Block (-OB for shorts, +OB for longs).
         """)
         return 
 
     if nav_choice == "Live Market Dashboard":
-        st.markdown("<h1 style='text-align: center; color: #58a6ff;'>⚡ Alpha Flow Quantitative Terminal</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #b359f8;'>⚡ Alpha Flow Quantitative Terminal</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #8b949e; font-size: 1.2rem;'>Institutional Smart Money Concepts (SMC) State-Machine Engine | <span style='color: #2ea043;'>🟢 Live Market Data</span></p>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -232,8 +214,8 @@ def show_main_terminal():
         c1, c2, c3 = st.columns([1, 2, 1])
 
         with c1:
-            st.metric("🎯 Total Active Strikes", hud_total, delta="Awaiting Execution" if hud_total > 0 else "Scanning...")
-            st.metric("💎 Peak Available R:R", f"1 : {hud_rr}", delta="Optimized" if hud_rr >= 2.0 else "Sub-optimal")
+            st.metric("🎯 Active Strikes", hud_total, delta="Awaiting Execution" if hud_total > 0 else "Scanning...")
+            st.metric("💎 Peak R:R", f"1 : {hud_rr}", delta="Optimized" if hud_rr >= 2.0 else "Sub-optimal")
 
         with c2:
             bias_score = (hud_longs / hud_total * 100) if hud_total > 0 else 50
@@ -260,8 +242,8 @@ def show_main_terminal():
             st.plotly_chart(fig_gauge, use_container_width=True)
 
         with c3:
-            st.metric("🟢 Long Bias Setups", hud_longs)
-            st.metric("🔴 Short Bias Setups", hud_shorts)
+            st.metric("🟢 Long Bias", hud_longs)
+            st.metric("🔴 Short Bias", hud_shorts)
 
         st.markdown("---")
 
