@@ -362,25 +362,34 @@ def show_main_terminal():
             st.subheader("Interactive Institutional Chart Inspector")
             st.caption("Plotly visualization showing live Order Blocks (+OB/-OB), Dealing Range, and BOS breaks.")
             
-            c1, c2, c3 = st.columns([2, 1, 1])
-            with c1: selected_ticker = st.selectbox("Search & Select Asset:", full_ticker_list, index=0)
-            with c2: bars_count = st.slider("Lookback Bars:", min_value=60, max_value=350, value=180, step=20)
-            with c3: chart_theme = st.selectbox("Theme:", ["light", "dark"], index=0)
+            # Use a text search input instead of a crashing selectbox
+            search_term = st.text_input("🔍 Search Asset (e.g. MOREPENLAB, RELIANCE, GOLD):", value="MOREPENLAB.NS")
+            
+            c1, c2 = st.columns([1, 1])
+            with c1: bars_count = st.slider("Lookback Bars:", min_value=60, max_value=350, value=180, step=20)
+            with c2: chart_theme = st.selectbox("Theme:", ["light", "dark"], index=0)
 
-            if selected_ticker:
-                with st.spinner(f"Computing SMC structure for {selected_ticker}..."):
-                    data = load_positional_data(selected_ticker, start_date="2022-01-01")
+            # Resolve the active ticker from the search term
+            active_ticker = search_term.upper().strip()
+            if not active_ticker.endswith(".NS") and not "=" in active_ticker and active_ticker not in ["GC=F", "SI=F", "CL=F", "BZ=F", "HG=F", "NG=F", "PA=F", "PL=F"]:
+                # Auto-append .NS if user types a raw NSE equity name
+                if not active_ticker.endswith(".NS"):
+                    active_ticker += ".NS"
+
+            if active_ticker:
+                with st.spinner(f"Computing SMC structure for {active_ticker}..."):
+                    data = load_positional_data(active_ticker, start_date="2022-01-01")
                     if data is not None and 'daily' in data and not data['daily'].empty and len(data['daily']) >= 50:
                         engine = SMCEngine(data['daily'], swing_length=3)
                         smc_df = engine.run_all()
                         tracker = SMCMitigationTracker(smc_df)
                         tracker.run_tracking()
                         
-                        chart_engine = SMCChartEngine(smc_df, tracker, selected_ticker)
+                        chart_engine = SMCChartEngine(smc_df, tracker, active_ticker)
                         fig = chart_engine.render_chart(num_bars=bars_count, save_html=False, theme=chart_theme)
                         st.plotly_chart(fig, use_container_width=True)
                     else:
-                        st.error(f"Insufficient data to generate chart for {selected_ticker}.")
+                        st.error(f"Insufficient data for '{active_ticker}'. Ensure the ticker format is correct (e.g., MOREPENLAB.NS).")
 
         with tabs[3]:
             st.subheader("Client Performance & Backtest Audit")
